@@ -1,0 +1,73 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-splitwise}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set, see infra/.env.example}"
+      POSTGRES_DB: "${POSTGRES_DB:-splitwise}"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-splitwise}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # docs/PLAN-PUBLIC.md §3a: no `ports:` — Postgres is reachable only
+    # from the `api` service over the internal Docker network, never the
+    # host or the internet.
+
+  api:
+    build:
+      context: ..
+      dockerfile: infra/api.Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_URL: "postgres://${POSTGRES_USER:-splitwise}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-splitwise}"
+      JWT_SECRET: "${JWT_SECRET:?JWT_SECRET must be set, generate with openssl rand -base64 48}"
+      ACCESS_TOKEN_TTL_MINUTES: "${ACCESS_TOKEN_TTL_MINUTES:-15}"
+      REFRESH_TOKEN_TTL_DAYS: "${REFRESH_TOKEN_TTL_DAYS:-30}"
+      COOKIE_SECURE: "${COOKIE_SECURE:-true}"
+      EMAIL_PROVIDER: "${EMAIL_PROVIDER:-log}"
+      SMTP_URL: "${SMTP_URL:-}"
+      MAIL_FROM: "${MAIL_FROM:-Splitwise <no-reply@example.com>}"
+      APP_ORIGIN: "${APP_ORIGIN:?APP_ORIGIN must be set, e.g. https://splitwise.example.ts.net}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # No `ports:` — only Caddy talks to this, over the internal network.
+
+  caddy:
+    build:
+      context: ..
+      dockerfile: infra/caddy.Dockerfile
+    restart: unless-stopped
+    environment:
+      SITE_ADDRESS: "${SITE_ADDRESS:-localhost}"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [internal]
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  internal:

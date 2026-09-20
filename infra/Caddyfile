@@ -1,0 +1,21 @@
+# {$SITE_ADDRESS} is the public hostname set in production (docs/PLAN-PUBLIC.md
+# §3b — an A record pointed at the Oracle VM's Reserved Public IP). Caddy
+# issues/renews the Let's Encrypt cert automatically once that hostname
+# resolves here. Defaults to localhost for local docker-compose testing,
+# where Caddy falls back to its internal CA instead of attempting ACME.
+{$SITE_ADDRESS:localhost} {
+	encode gzip
+
+	handle /api/* {
+		reverse_proxy api:3000
+	}
+
+	# SPA fallback: any client-side route (e.g. /login, /verify-email)
+	# that isn't a real static file resolves to index.html so React
+	# Router can take over, including on a hard refresh.
+	handle {
+		root * /srv/web
+		try_files {path} /index.html
+		file_server
+	}
+}
