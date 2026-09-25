@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { formatDate, formatMoney, memberColorValues, type CreateExpenseRequest, type MemberColor } from "@splitty/shared";
+import { formatDate, formatMoney, memberColorValues, type CreateExpenseRequest, type Expense, type MemberColor } from "@splitty/shared";
 import { AppShell } from "../components/AppShell.js";
 import { ApiError } from "../lib/api.js";
 import { useAuth } from "../lib/AuthContext.js";
@@ -212,6 +212,21 @@ export function GroupDetailPage() {
     } catch (err) {
       setExpenseError(err instanceof ApiError ? err.message : "Something went wrong");
     }
+  }
+
+  function handleDuplicate(expense: Expense) {
+    setShowAddExpense(true);
+    setExpenseError(null);
+    setExpenseDescription(expense.description);
+    setExpenseAmount((expense.amountMinor / 100).toFixed(2));
+    setSplitMethod("exact");
+    setParticipants(new Set(expense.participants.map((p) => p.userId)));
+    const values: Record<string, string> = {};
+    for (const p of expense.participants) {
+      values[p.userId] = (p.owedAmountMinor / 100).toFixed(2);
+    }
+    setParticipantValues(values);
+    setPayerRows(expense.payers.map((p) => ({ userId: p.userId, amount: (p.amountMinor / 100).toFixed(2) })));
   }
 
   async function handleSettle(e: FormEvent) {
@@ -568,7 +583,10 @@ export function GroupDetailPage() {
                 <div>
                   <p className="text-ink">{expense.description}</p>
                   <p className="text-xs text-ink-muted">
-                    {expense.payers.map((p) => nameFor(p)).join(", ")} paid · {formatDate(new Date(expense.expenseDate))}
+                    {expense.payers.map((p) => nameFor(p)).join(", ")} paid · {formatDate(new Date(expense.expenseDate))} ·{" "}
+                    <button onClick={() => handleDuplicate(expense)} className="hover:text-ledger transition-colors">
+                      Duplicate
+                    </button>
                   </p>
                 </div>
                 <span className="figure text-ink font-medium">{formatMoney(expense.amountMinor, expense.currency)}</span>
