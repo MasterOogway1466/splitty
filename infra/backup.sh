@@ -14,7 +14,7 @@ set -euo pipefail
 #   BACKUP_ENCRYPTION_PASSPHRASE   (long random value, stored OUTSIDE this
 #                                   VM too — a passphrase that only lives
 #                                   on the machine it protects isn't one)
-#   BACKUP_RCLONE_REMOTE           (e.g. "b2:my-bucket/splitwise-backups";
+#   BACKUP_RCLONE_REMOTE           (e.g. "b2:my-bucket/splitty-backups";
 #                                   left unset, this just backs up locally
 #                                   — useful for testing, not for production)
 #
@@ -32,7 +32,7 @@ OUT_DIR="${1:-$SCRIPT_DIR/backups}"
 mkdir -p "$OUT_DIR"
 
 TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-DUMP_FILE="$OUT_DIR/splitwise-$TIMESTAMP.sql"
+DUMP_FILE="$OUT_DIR/splitty-$TIMESTAMP.sql"
 ENCRYPTED_FILE="$DUMP_FILE.enc"
 
 echo "Dumping database $POSTGRES_DB..."

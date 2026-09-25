@@ -16,7 +16,7 @@ COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
 : "${BACKUP_ENCRYPTION_PASSPHRASE:?}"
 
 ENCRYPTED_FILE="${1:?Usage: restore.sh <encrypted-dump> [scratch-db-name]}"
-SCRATCH_DB="${2:-splitwise_restore_test}"
+SCRATCH_DB="${2:-splitty_restore_test}"
 DECRYPTED_FILE="$(mktemp)"
 trap 'rm -f "$DECRYPTED_FILE"' EXIT
 

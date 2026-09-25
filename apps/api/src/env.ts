@@ -17,7 +17,7 @@ const envSchema = z.object({
     .transform((v) => v === "true"),
   EMAIL_PROVIDER: z.enum(["log", "smtp"]).default("log"),
   SMTP_URL: z.string().optional(),
-  MAIL_FROM: z.string().default("Splitwise <no-reply@example.com>"),
+  MAIL_FROM: z.string().default("Splitty <no-reply@example.com>"),
   APP_ORIGIN: z.string().url().default("http://localhost:5173"),
 });
 

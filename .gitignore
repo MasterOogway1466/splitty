@@ -11,3 +11,4 @@ infra/backups/
 infra/secrets/
 *.pem
 *.key
+HANDOFF.md

@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { and, eq, isNull } from "drizzle-orm";
-import { CURRENCY_MINOR_UNIT_EXPONENT } from "@splitwise/shared";
+import { CURRENCY_MINOR_UNIT_EXPONENT } from "@splitty/shared";
 import { createDb, type Database } from "./client.js";
 import { categories, currencies } from "./schema.js";
 import { loadEnv } from "../env.js";

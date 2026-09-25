@@ -10,14 +10,14 @@ FROM base AS deps
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages/shared/package.json packages/shared/package.json
 COPY apps/api/package.json apps/api/package.json
-RUN pnpm install --frozen-lockfile --filter @splitwise/api...
+RUN pnpm install --frozen-lockfile --filter @splitty/api...
 
 FROM deps AS build
 COPY packages/shared packages/shared
 COPY apps/api apps/api
 COPY tsconfig.base.json ./
-RUN pnpm --filter @splitwise/shared build
-RUN pnpm --filter @splitwise/api build
+RUN pnpm --filter @splitty/shared build
+RUN pnpm --filter @splitty/api build
 
 FROM base AS runtime
 ENV NODE_ENV=production

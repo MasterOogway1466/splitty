@@ -6,6 +6,6 @@ export default defineConfig({
   schema: "./src/db/schema.ts",
   out: "./drizzle",
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? "postgres://splitwise:splitwise@localhost:5432/splitwise",
+    url: process.env.DATABASE_URL ?? "postgres://splitty:splitty@localhost:5432/splitty",
   },
 });

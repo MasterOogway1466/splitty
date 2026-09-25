@@ -1,19 +1,19 @@
 {
-  "name": "splitwise",
+  "name": "splitty",
   "private": true,
   "packageManager": "pnpm@11.23.0",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "build:shared": "pnpm --filter @splitwise/shared build",
-    "dev:api": "pnpm build:shared && pnpm --filter @splitwise/api dev",
-    "dev:web": "pnpm build:shared && pnpm --filter @splitwise/web dev",
-    "build": "pnpm build:shared && pnpm --filter @splitwise/api build && pnpm --filter @splitwise/web build",
+    "build:shared": "pnpm --filter @splitty/shared build",
+    "dev:api": "pnpm build:shared && pnpm --filter @splitty/api dev",
+    "dev:web": "pnpm build:shared && pnpm --filter @splitty/web dev",
+    "build": "pnpm build:shared && pnpm --filter @splitty/api build && pnpm --filter @splitty/web build",
     "test": "pnpm build:shared && pnpm -r test",
     "typecheck": "pnpm -r typecheck",
-    "db:generate": "pnpm --filter @splitwise/api db:generate",
-    "db:migrate": "pnpm --filter @splitwise/api db:migrate",
-    "db:seed": "pnpm --filter @splitwise/api db:seed"
+    "db:generate": "pnpm --filter @splitty/api db:generate",
+    "db:migrate": "pnpm --filter @splitty/api db:migrate",
+    "db:seed": "pnpm --filter @splitty/api db:seed"
   }
 }

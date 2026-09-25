@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import type { UserProfile } from "@splitwise/shared";
+import type { UserProfile } from "@splitty/shared";
 import { apiGet, apiPost, setAccessToken } from "./api.js";
 
 interface AuthContextValue {

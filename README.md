@@ -1,4 +1,4 @@
-# Splitwise
+# Splitty
 
 Two deployment tracks are planned and documented in `docs/`:
 
@@ -28,8 +28,8 @@ pnpm install
 **A local Postgres is required for `apps/api`** (both for `pnpm dev:api` and for its test suite). Spin one up however you like; a throwaway container works:
 
 ```bash
-docker run -d --name splitwise-test-pg \
-  -e POSTGRES_USER=splitwise -e POSTGRES_PASSWORD=splitwise -e POSTGRES_DB=splitwise_test \
+docker run -d --name splitty-test-pg \
+  -e POSTGRES_USER=splitty -e POSTGRES_PASSWORD=splitty -e POSTGRES_DB=splitty_test \
   -p 5433:5432 postgres:16-alpine
 ```
 

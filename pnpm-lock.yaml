@@ -13,7 +13,7 @@ importers:
       '@fastify/cookie':
         specifier: ^11.0.1
         version: 11.1.2
-      '@splitwise/shared':
+      '@splitty/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       argon2:
@@ -68,7 +68,7 @@ importers:
 
   apps/web:
     dependencies:
-      '@splitwise/shared':
+      '@splitty/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@tanstack/react-query':

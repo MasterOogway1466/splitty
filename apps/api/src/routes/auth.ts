@@ -5,7 +5,7 @@ import {
   requestPasswordResetSchema,
   signupRequestSchema,
   verifyEmailRequestSchema,
-} from "@splitwise/shared";
+} from "@splitty/shared";
 import { checkAndRecordRateLimit } from "../auth/rateLimit.js";
 import { toUserProfile } from "../auth/service.js";
 import { InvalidRefreshTokenError, RateLimitedError } from "../auth/errors.js";

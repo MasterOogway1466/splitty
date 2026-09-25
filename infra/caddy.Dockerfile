@@ -11,14 +11,14 @@ FROM base AS deps
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages/shared/package.json packages/shared/package.json
 COPY apps/web/package.json apps/web/package.json
-RUN pnpm install --frozen-lockfile --filter @splitwise/web...
+RUN pnpm install --frozen-lockfile --filter @splitty/web...
 
 FROM deps AS build
 COPY packages/shared packages/shared
 COPY apps/web apps/web
 COPY tsconfig.base.json ./
-RUN pnpm --filter @splitwise/shared build
-RUN pnpm --filter @splitwise/web build
+RUN pnpm --filter @splitty/shared build
+RUN pnpm --filter @splitty/web build
 
 FROM caddy:2-alpine
 COPY --from=build /repo/apps/web/dist /srv/web

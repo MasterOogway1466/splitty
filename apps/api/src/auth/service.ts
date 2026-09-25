@@ -1,5 +1,5 @@
 import { and, eq, isNull } from "drizzle-orm";
-import type { UserProfile } from "@splitwise/shared";
+import type { UserProfile } from "@splitty/shared";
 import type { Database } from "../db/client.js";
 import { emailTokens, refreshTokens, users } from "../db/schema.js";
 import type { Env } from "../env.js";
@@ -60,7 +60,7 @@ export class AuthService {
   // as slow as one against a real account, rather than returning
   // immediately and leaking which emails exist via response timing.
   #getDummyHash(): Promise<string> {
-    this.#dummyHash ??= hashPassword("splitwise-dummy-password-for-timing-safety");
+    this.#dummyHash ??= hashPassword("splitty-dummy-password-for-timing-safety");
     return this.#dummyHash;
   }
 
@@ -86,7 +86,7 @@ export class AuthService {
     await this.#sendCappedEmail(userId, {
       to: email,
       subject: "Verify your email",
-      text: `Welcome to Splitwise! Verify your email:\n\n${link}\n\nThis link expires in 24 hours.`,
+      text: `Welcome to Splitty! Verify your email:\n\n${link}\n\nThis link expires in 24 hours.`,
     });
   }
 
