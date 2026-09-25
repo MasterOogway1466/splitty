@@ -1,1 +1,30 @@
 @import "tailwindcss";
+
+/* Ledger-paper palette (docs/superpowers design brainstorm): money is
+   typography, one bold color carries the identity, rows not cards. */
+@theme {
+  --color-paper: #f3f5f0;
+  --color-ink: #16231c;
+  --color-ink-muted: #5b6660;
+  --color-ledger: #1f4d3c;
+  --color-ledger-dark: #163828;
+  --color-rust: #b23a2e;
+  --color-gold: #c99a3b;
+  --color-line: #dcd8cc;
+
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
+}
+
+body {
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+}
+
+/* Tabular figures wherever a dollar amount appears, so a column of
+   numbers actually lines up like a real ledger. */
+.figure {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}

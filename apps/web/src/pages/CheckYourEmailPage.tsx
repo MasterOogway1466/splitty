@@ -7,7 +7,7 @@ export function CheckYourEmailPage() {
 
   return (
     <AuthLayout title="Check your email">
-      <p className="text-sm text-slate-600">
+      <p className="text-sm text-ink-muted">
         We sent a verification link{email ? ` to ${email}` : ""}. Click it to verify your account, then log in.
       </p>
     </AuthLayout>

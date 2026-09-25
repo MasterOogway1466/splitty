@@ -27,11 +27,11 @@ export function VerifyEmailPage() {
 
   return (
     <AuthLayout title="Verify your email">
-      {status === "verifying" && <p className="text-sm text-slate-600">Verifying…</p>}
+      {status === "verifying" && <p className="text-sm text-ink-muted">Verifying…</p>}
       {status === "success" && (
         <>
           <SuccessBanner message="Your email is verified." />
-          <Link to="/login" className="text-sm text-slate-900 font-medium hover:underline">
+          <Link to="/login" className="text-sm text-ledger font-medium hover:underline">
             Continue to log in
           </Link>
         </>

@@ -29,7 +29,7 @@ export function ForgotPasswordPage() {
         </form>
       )}
       <p className="mt-4 text-sm text-center">
-        <Link to="/login" className="text-slate-900 font-medium hover:underline">
+        <Link to="/login" className="text-ledger font-medium hover:underline">
           Back to login
         </Link>
       </p>

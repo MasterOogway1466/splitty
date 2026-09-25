@@ -2,21 +2,24 @@ import type { ReactNode } from "react";
 
 export function AuthLayout({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
-      <div className="w-full max-w-sm bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-        <h1 className="text-xl font-semibold text-slate-900 mb-6">{title}</h1>
-        {children}
+    <div className="min-h-screen flex items-center justify-center bg-paper px-4">
+      <div className="w-full max-w-sm">
+        <p className="text-center font-semibold text-ledger text-sm tracking-tight mb-6">Splitty</p>
+        <div className="bg-white border border-line rounded-lg p-6">
+          <h1 className="text-lg font-semibold text-ink mb-6">{title}</h1>
+          {children}
+        </div>
       </div>
     </div>
   );
 }
 
 export function ErrorBanner({ message }: { message: string }) {
-  return <div className="mb-4 rounded-md bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{message}</div>;
+  return <div className="mb-4 rounded-md bg-rust/10 border border-rust/25 text-rust text-sm px-3 py-2">{message}</div>;
 }
 
 export function SuccessBanner({ message }: { message: string }) {
-  return <div className="mb-4 rounded-md bg-green-50 border border-green-200 text-green-700 text-sm px-3 py-2">{message}</div>;
+  return <div className="mb-4 rounded-md bg-ledger/10 border border-ledger/25 text-ledger-dark text-sm px-3 py-2">{message}</div>;
 }
 
 export function TextField(props: {
@@ -30,7 +33,7 @@ export function TextField(props: {
 }) {
   return (
     <label className="block">
-      <span className="block text-sm font-medium text-slate-700 mb-1">{props.label}</span>
+      <span className="block text-sm font-medium text-ink mb-1">{props.label}</span>
       <input
         type={props.type ?? "text"}
         value={props.value}
@@ -38,7 +41,7 @@ export function TextField(props: {
         autoComplete={props.autoComplete}
         required={props.required}
         minLength={props.minLength}
-        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+        className="w-full rounded-md border border-line px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-ledger/40 focus:border-ledger"
       />
     </label>
   );
@@ -49,7 +52,7 @@ export function SubmitButton({ children, disabled }: { children: ReactNode; disa
     <button
       type="submit"
       disabled={disabled}
-      className="w-full rounded-md bg-slate-900 text-white text-sm font-medium py-2 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+      className="w-full rounded-md bg-ledger text-paper text-sm font-medium py-2 hover:bg-ledger-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
     >
       {children}
     </button>

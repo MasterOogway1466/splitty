@@ -44,9 +44,9 @@ export function SignupPage() {
         />
         <SubmitButton disabled={submitting}>{submitting ? "Creating account…" : "Sign up"}</SubmitButton>
       </form>
-      <p className="mt-4 text-sm text-slate-600 text-center">
+      <p className="mt-4 text-sm text-ink-muted text-center">
         Already have an account?{" "}
-        <Link to="/login" className="text-slate-900 font-medium hover:underline">
+        <Link to="/login" className="text-ledger font-medium hover:underline">
           Log in
         </Link>
       </p>

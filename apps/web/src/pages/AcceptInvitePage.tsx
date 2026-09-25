@@ -47,7 +47,7 @@ export function AcceptInvitePage() {
   if (infoQuery.isLoading) {
     return (
       <AuthLayout title="Invite">
-        <p className="text-sm text-slate-500">Loading…</p>
+        <p className="text-sm text-ink-muted">Loading…</p>
       </AuthLayout>
     );
   }
@@ -65,8 +65,8 @@ export function AcceptInvitePage() {
   if (info.alreadyAccepted) {
     return (
       <AuthLayout title="Invite already used">
-        <p className="text-sm text-slate-600 mb-4">This invite has already been claimed.</p>
-        <Link to="/login" className="text-sm text-slate-900 font-medium hover:underline">
+        <p className="text-sm text-ink-muted mb-4">This invite has already been claimed.</p>
+        <Link to="/login" className="text-sm text-ledger font-medium hover:underline">
           Continue to log in
         </Link>
       </AuthLayout>
@@ -76,7 +76,7 @@ export function AcceptInvitePage() {
   if (info.expired) {
     return (
       <AuthLayout title="Invite expired">
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-ink-muted">
           This invite link has expired. Ask {info.inviterDisplayName} to send you a new one.
         </p>
       </AuthLayout>
@@ -85,7 +85,7 @@ export function AcceptInvitePage() {
 
   return (
     <AuthLayout title="You're invited">
-      <p className="text-sm text-slate-600 mb-4">
+      <p className="text-sm text-ink-muted mb-4">
         {info.inviterDisplayName} invited you{info.groupName ? ` to join "${info.groupName}"` : ""} on Splitty
         ({info.inviteeEmail}). Set a display name and password to finish creating your account.
       </p>

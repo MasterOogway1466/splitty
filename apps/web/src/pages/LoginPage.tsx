@@ -50,10 +50,10 @@ export function LoginPage() {
         <SubmitButton disabled={submitting}>{submitting ? "Logging in…" : "Log in"}</SubmitButton>
       </form>
       <div className="mt-4 flex items-center justify-between text-sm">
-        <Link to="/signup" className="text-slate-900 font-medium hover:underline">
+        <Link to="/signup" className="text-ledger font-medium hover:underline">
           Create an account
         </Link>
-        <Link to="/forgot-password" className="text-slate-500 hover:underline">
+        <Link to="/forgot-password" className="text-ink-muted hover:underline">
           Forgot password?
         </Link>
       </div>

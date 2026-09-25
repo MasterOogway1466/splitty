@@ -16,18 +16,26 @@ import {
   useSetMemberColor,
 } from "../lib/hooks.js";
 
+// A muted, paper-friendly palette distinct from the app's own ledger
+// green / rust semantic colors, so a member's chosen color is never
+// mistaken for a balance direction.
 const COLOR_SWATCH_CLASS: Record<MemberColor, string> = {
-  red: "bg-red-500",
-  orange: "bg-orange-500",
-  amber: "bg-amber-500",
-  green: "bg-green-500",
-  teal: "bg-teal-500",
-  blue: "bg-blue-500",
-  indigo: "bg-indigo-500",
-  purple: "bg-purple-500",
-  pink: "bg-pink-500",
-  slate: "bg-slate-500",
+  red: "bg-[#c1443a]",
+  orange: "bg-[#c97a35]",
+  amber: "bg-[#c99a3b]",
+  green: "bg-[#3f7d5c]",
+  teal: "bg-[#2f8f80]",
+  blue: "bg-[#3b6fa6]",
+  indigo: "bg-[#5a5fa6]",
+  purple: "bg-[#7a5aa6]",
+  pink: "bg-[#b85a8a]",
+  slate: "bg-[#6b7280]",
 };
+
+const inputClass =
+  "w-full rounded-md border border-line px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-ledger/40 focus:border-ledger";
+const primaryButtonClass = "rounded-md bg-ledger text-paper text-sm font-medium px-4 py-2 hover:bg-ledger-dark transition-colors disabled:opacity-50";
+const linkButtonClass = "text-sm text-ink-muted hover:text-ledger transition-colors";
 
 export function GroupDetailPage() {
   const { groupId } = useParams<{ groupId: string }>();
@@ -67,14 +75,14 @@ export function GroupDetailPage() {
   if (groupQuery.isLoading) {
     return (
       <AppShell>
-        <p className="text-sm text-slate-500">Loading…</p>
+        <p className="text-sm text-ink-muted">Loading…</p>
       </AppShell>
     );
   }
   if (groupQuery.isError || !groupQuery.data) {
     return (
       <AppShell>
-        <p className="text-sm text-red-700">Group not found, or you don't have access to it.</p>
+        <p className="text-sm text-rust">Group not found, or you don't have access to it.</p>
       </AppShell>
     );
   }
@@ -168,85 +176,87 @@ export function GroupDetailPage() {
 
   return (
     <AppShell>
-      <div className="mb-2 flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-slate-900">{group.name}</h1>
-        <p className="text-sm text-slate-500">{currency} · simplify debts: {group.simplifyDebts ? "on" : "off"}</p>
+      <div className="mb-1 flex items-center justify-between">
+        <h1 className="text-xl font-semibold text-ink">{group.name}</h1>
       </div>
+      <p className="text-sm text-ink-muted mb-3">
+        Balances in {currency}. Debts are {group.simplifyDebts ? "simplified" : "not simplified"}.
+      </p>
 
       <div className="mb-6 flex items-center gap-4">
         {confirmLeave ? (
-          <span className="text-sm text-slate-600">
+          <span className="text-sm text-ink-muted">
             Leave "{group.name}"?{" "}
-            <button onClick={handleLeave} disabled={leaveGroup.isPending} className="text-red-700 font-medium hover:underline">
+            <button onClick={handleLeave} disabled={leaveGroup.isPending} className="text-rust font-medium hover:underline">
               {leaveGroup.isPending ? "Leaving…" : "Confirm"}
             </button>{" "}
-            <button onClick={() => setConfirmLeave(false)} className="text-slate-500 hover:underline">
+            <button onClick={() => setConfirmLeave(false)} className="text-ink-muted hover:underline">
               Cancel
             </button>
           </span>
         ) : (
-          <button onClick={() => setConfirmLeave(true)} className="text-sm text-slate-500 hover:text-red-700 underline">
+          <button onClick={() => setConfirmLeave(true)} className={linkButtonClass}>
             Leave group
           </button>
         )}
 
         {group.members.find((m) => m.userId === user?.id)?.role === "owner" &&
           (confirmDelete ? (
-            <span className="text-sm text-slate-600">
+            <span className="text-sm text-ink-muted">
               Delete "{group.name}" for everyone?{" "}
-              <button onClick={handleDelete} disabled={deleteGroup.isPending} className="text-red-700 font-medium hover:underline">
+              <button onClick={handleDelete} disabled={deleteGroup.isPending} className="text-rust font-medium hover:underline">
                 {deleteGroup.isPending ? "Deleting…" : "Confirm"}
               </button>{" "}
-              <button onClick={() => setConfirmDelete(false)} className="text-slate-500 hover:underline">
+              <button onClick={() => setConfirmDelete(false)} className="text-ink-muted hover:underline">
                 Cancel
               </button>
             </span>
           ) : (
-            <button onClick={() => setConfirmDelete(true)} className="text-sm text-slate-500 hover:text-red-700 underline">
+            <button onClick={() => setConfirmDelete(true)} className={linkButtonClass}>
               Delete group
             </button>
           ))}
       </div>
-      {leaveError && <p className="text-sm text-red-700 mb-4">{leaveError}</p>}
-      {deleteError && <p className="text-sm text-red-700 mb-4">{deleteError}</p>}
+      {leaveError && <p className="text-sm text-rust mb-4">{leaveError}</p>}
+      {deleteError && <p className="text-sm text-rust mb-4">{deleteError}</p>}
 
-      <section className="mb-6 bg-white border border-slate-200 rounded-lg p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-medium text-slate-900">Members</h2>
-          <button onClick={() => setShowAddMember((v) => !v)} className="text-sm text-slate-600 hover:text-slate-900 underline">
+      <section className="mb-6 bg-white border border-line rounded-lg">
+        <div className="flex items-center justify-between px-4 py-3.5">
+          <h2 className="font-medium text-ink">Members</h2>
+          <button onClick={() => setShowAddMember((v) => !v)} className={linkButtonClass}>
             {showAddMember ? "Cancel" : "Add member"}
           </button>
         </div>
         {showAddMember && (
-          <form onSubmit={handleAddMember} className="mb-4 flex gap-2">
+          <form onSubmit={handleAddMember} className="mx-4 mb-4 flex gap-2">
             <input
               type="email"
               value={memberEmail}
               onChange={(e) => setMemberEmail(e.target.value)}
               placeholder="email@example.com"
               required
-              className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm"
+              className={`flex-1 ${inputClass}`}
             />
-            <button type="submit" disabled={addMember.isPending} className="rounded-md bg-slate-900 text-white text-sm px-3 py-2 hover:bg-slate-700">
+            <button type="submit" disabled={addMember.isPending} className={primaryButtonClass}>
               {addMember.isPending ? "Adding…" : "Add"}
             </button>
           </form>
         )}
-        {memberError && <p className="text-sm text-red-700 mb-2">{memberError}</p>}
-        <ul className="space-y-2">
+        {memberError && <p className="text-sm text-rust px-4 mb-3">{memberError}</p>}
+        <div className="divide-y divide-line border-t border-line">
           {group.members.map((m) => (
-            <li key={m.userId} className="flex items-center justify-between text-sm">
-              <span className="flex items-center gap-2 text-slate-900">
+            <div key={m.userId} className="flex items-center justify-between text-sm px-4 py-3">
+              <span className="flex items-center gap-2 text-ink">
                 {m.color && <span className={`inline-block h-2.5 w-2.5 rounded-full ${COLOR_SWATCH_CLASS[m.color]}`} />}
                 {nameFor(m)}
-                {m.role === "owner" && <span className="text-xs text-amber-700">· Owner</span>}
+                {m.role === "owner" && <span className="text-xs text-gold font-medium">· Owner</span>}
               </span>
               <div className="flex items-center gap-3">
                 {m.userId === user?.id && (
                   <select
                     value={m.color ?? ""}
                     onChange={(e) => setMemberColor.mutate((e.target.value || null) as MemberColor | null)}
-                    className="rounded-md border border-slate-300 px-1.5 py-0.5 text-xs"
+                    className="rounded-md border border-line px-1.5 py-1 text-xs text-ink-muted focus:outline-none focus:ring-2 focus:ring-ledger/40"
                   >
                     <option value="">No color</option>
                     {memberColorValues.map((c) => (
@@ -256,25 +266,25 @@ export function GroupDetailPage() {
                     ))}
                   </select>
                 )}
-                <span className={m.netBalanceMinor >= 0 ? "text-green-700" : "text-red-700"}>
+                <span className={`figure ${m.netBalanceMinor >= 0 ? "text-ledger" : "text-rust"}`}>
                   {m.netBalanceMinor === 0 ? "settled up" : formatMoney(m.netBalanceMinor, currency)}
                 </span>
                 {m.userId !== user?.id && (
-                  <button onClick={() => removeMember.mutate(m.userId)} className="text-xs text-slate-400 hover:text-red-600">
+                  <button onClick={() => removeMember.mutate(m.userId)} className="text-xs text-ink-muted hover:text-rust transition-colors">
                     remove
                   </button>
                 )}
               </div>
-            </li>
+            </div>
           ))}
-        </ul>
+        </div>
       </section>
 
-      <section className="mb-6 bg-white border border-slate-200 rounded-lg p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-medium text-slate-900">Expenses</h2>
-          <div className="flex gap-3">
-            <button onClick={() => setShowSettle((v) => !v)} className="text-sm text-slate-600 hover:text-slate-900 underline">
+      <section className="mb-6 bg-white border border-line rounded-lg">
+        <div className="flex items-center justify-between px-4 py-3.5">
+          <h2 className="font-medium text-ink">Expenses</h2>
+          <div className="flex gap-4">
+            <button onClick={() => setShowSettle((v) => !v)} className={linkButtonClass}>
               Settle up
             </button>
             <button
@@ -283,7 +293,7 @@ export function GroupDetailPage() {
                 setParticipants(new Set(group.members.map((m) => m.userId)));
                 setPaidBy(user?.id ?? "");
               }}
-              className="text-sm text-slate-600 hover:text-slate-900 underline"
+              className={linkButtonClass}
             >
               Add expense
             </button>
@@ -291,9 +301,9 @@ export function GroupDetailPage() {
         </div>
 
         {showSettle && (
-          <form onSubmit={handleSettle} className="mb-4 border border-slate-200 rounded-md p-3 space-y-2">
+          <form onSubmit={handleSettle} className="mx-4 mb-4 bg-paper border border-line rounded-md p-3 space-y-2">
             <div className="flex gap-2">
-              <select value={settleFrom} onChange={(e) => setSettleFrom(e.target.value)} required className="flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+              <select value={settleFrom} onChange={(e) => setSettleFrom(e.target.value)} required className={`flex-1 ${inputClass} py-1.5`}>
                 <option value="">Who paid?</option>
                 {group.members.map((m) => (
                   <option key={m.userId} value={m.userId}>
@@ -301,7 +311,7 @@ export function GroupDetailPage() {
                   </option>
                 ))}
               </select>
-              <select value={settleTo} onChange={(e) => setSettleTo(e.target.value)} required className="flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+              <select value={settleTo} onChange={(e) => setSettleTo(e.target.value)} required className={`flex-1 ${inputClass} py-1.5`}>
                 <option value="">Paid to whom?</option>
                 {group.members.map((m) => (
                   <option key={m.userId} value={m.userId}>
@@ -318,22 +328,22 @@ export function GroupDetailPage() {
               onChange={(e) => setSettleAmount(e.target.value)}
               placeholder={`Amount (${currency})`}
               required
-              className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+              className={`${inputClass} py-1.5`}
             />
-            <button type="submit" disabled={createSettlement.isPending} className="rounded-md bg-slate-900 text-white text-sm px-3 py-1.5 hover:bg-slate-700">
+            <button type="submit" disabled={createSettlement.isPending} className={`${primaryButtonClass} py-1.5`}>
               {createSettlement.isPending ? "Recording…" : "Record settlement"}
             </button>
           </form>
         )}
 
         {showAddExpense && (
-          <form onSubmit={handleAddExpense} className="mb-4 border border-slate-200 rounded-md p-3 space-y-2">
+          <form onSubmit={handleAddExpense} className="mx-4 mb-4 bg-paper border border-line rounded-md p-3 space-y-3">
             <input
               value={expenseDescription}
               onChange={(e) => setExpenseDescription(e.target.value)}
               placeholder="Description"
               required
-              className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+              className={`${inputClass} py-1.5`}
             />
             <input
               type="number"
@@ -343,11 +353,11 @@ export function GroupDetailPage() {
               onChange={(e) => setExpenseAmount(e.target.value)}
               placeholder={`Amount (${currency})`}
               required
-              className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+              className={`${inputClass} py-1.5`}
             />
             <label className="block text-sm">
-              <span className="text-slate-700">Paid by</span>
-              <select value={paidBy} onChange={(e) => setPaidBy(e.target.value)} className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+              <span className="text-ink font-medium">Paid by</span>
+              <select value={paidBy} onChange={(e) => setPaidBy(e.target.value)} className={`mt-1 ${inputClass} py-1.5`}>
                 {group.members.map((m) => (
                   <option key={m.userId} value={m.userId}>
                     {nameFor(m)}
@@ -356,37 +366,39 @@ export function GroupDetailPage() {
               </select>
             </label>
             <div className="text-sm">
-              <span className="text-slate-700">Split equally between</span>
-              <div className="mt-1 space-y-1">
+              <span className="text-ink font-medium">Split equally between</span>
+              <div className="mt-1.5 space-y-1.5">
                 {group.members.map((m) => (
-                  <label key={m.userId} className="flex items-center gap-2">
-                    <input type="checkbox" checked={participants.has(m.userId)} onChange={() => toggleParticipant(m.userId)} />
+                  <label key={m.userId} className="flex items-center gap-2 text-ink-muted">
+                    <input type="checkbox" checked={participants.has(m.userId)} onChange={() => toggleParticipant(m.userId)} className="accent-ledger" />
                     {nameFor(m)}
                   </label>
                 ))}
               </div>
             </div>
-            {expenseError && <p className="text-sm text-red-700">{expenseError}</p>}
-            <button type="submit" disabled={createExpense.isPending} className="rounded-md bg-slate-900 text-white text-sm px-3 py-1.5 hover:bg-slate-700">
+            {expenseError && <p className="text-sm text-rust">{expenseError}</p>}
+            <button type="submit" disabled={createExpense.isPending} className={primaryButtonClass}>
               {createExpense.isPending ? "Adding…" : "Add expense"}
             </button>
           </form>
         )}
 
-        {expensesQuery.data && expensesQuery.data.length === 0 && <p className="text-sm text-slate-500">No expenses yet.</p>}
-        <ul className="space-y-2">
-          {expensesQuery.data?.map((expense) => (
-            <li key={expense.id} className="text-sm flex items-center justify-between border-b border-slate-100 pb-2 last:border-0">
-              <div>
-                <p className="text-slate-900">{expense.description}</p>
-                <p className="text-xs text-slate-500">
-                  {expense.payers.map((p) => nameFor(p)).join(", ")} paid · {formatDate(new Date(expense.expenseDate))}
-                </p>
+        {expensesQuery.data && expensesQuery.data.length === 0 && <p className="text-sm text-ink-muted px-4 pb-4">No expenses yet.</p>}
+        {expensesQuery.data && expensesQuery.data.length > 0 && (
+          <div className="divide-y divide-line border-t border-line">
+            {expensesQuery.data.map((expense) => (
+              <div key={expense.id} className="text-sm flex items-center justify-between px-4 py-3">
+                <div>
+                  <p className="text-ink">{expense.description}</p>
+                  <p className="text-xs text-ink-muted">
+                    {expense.payers.map((p) => nameFor(p)).join(", ")} paid · {formatDate(new Date(expense.expenseDate))}
+                  </p>
+                </div>
+                <span className="figure text-ink font-medium">{formatMoney(expense.amountMinor, expense.currency)}</span>
               </div>
-              <span className="text-slate-900 font-medium">{formatMoney(expense.amountMinor, expense.currency)}</span>
-            </li>
-          ))}
-        </ul>
+            ))}
+          </div>
+        )}
       </section>
     </AppShell>
   );

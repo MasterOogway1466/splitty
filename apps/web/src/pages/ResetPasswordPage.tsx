@@ -34,7 +34,7 @@ export function ResetPasswordPage() {
       {done ? (
         <>
           <SuccessBanner message="Password updated. You've been logged out everywhere — log in with your new password." />
-          <Link to="/login" className="text-sm text-slate-900 font-medium hover:underline">
+          <Link to="/login" className="text-sm text-ledger font-medium hover:underline">
             Continue to log in
           </Link>
         </>
