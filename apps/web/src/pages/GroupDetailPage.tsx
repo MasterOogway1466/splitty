@@ -118,6 +118,18 @@ export function GroupDetailPage() {
     });
   }
 
+  function updatePayerRow(index: number, patch: Partial<{ userId: string; amount: string }>) {
+    setPayerRows((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+  }
+  function addPayerRow() {
+    const used = new Set(payerRows.map((r) => r.userId));
+    const next = group.members.find((m) => !used.has(m.userId));
+    setPayerRows((prev) => [...prev, { userId: next?.userId ?? group.members[0]!.userId, amount: "" }]);
+  }
+  function removePayerRow(index: number) {
+    setPayerRows((prev) => prev.filter((_, i) => i !== index));
+  }
+
   async function handleAddMember(e: FormEvent) {
     e.preventDefault();
     setMemberError(null);
@@ -417,16 +429,81 @@ export function GroupDetailPage() {
               required
               className={`${inputClass} py-1.5`}
             />
-            <label className="block text-sm">
+            <div className="text-sm">
               <span className="text-ink font-medium">Paid by</span>
-              <select value={paidBy} onChange={(e) => setPaidBy(e.target.value)} className={`mt-1 ${inputClass} py-1.5`}>
-                {group.members.map((m) => (
-                  <option key={m.userId} value={m.userId}>
-                    {nameFor(m)}
-                  </option>
-                ))}
-              </select>
-            </label>
+              {payerRows.length === 1 ? (
+                <>
+                  <select
+                    value={payerRows[0]!.userId}
+                    onChange={(e) => updatePayerRow(0, { userId: e.target.value })}
+                    className={`mt-1 ${inputClass} py-1.5`}
+                  >
+                    {group.members.map((m) => (
+                      <option key={m.userId} value={m.userId}>
+                        {nameFor(m)}
+                      </option>
+                    ))}
+                  </select>
+                  {group.members.length > 1 && (
+                    <button type="button" onClick={addPayerRow} className={`mt-1 block ${linkButtonClass}`}>
+                      + add another payer
+                    </button>
+                  )}
+                </>
+              ) : (
+                <div className="mt-1 space-y-1.5">
+                  {payerRows.map((row, i) => (
+                    <div key={i} className="flex gap-2">
+                      <select
+                        value={row.userId}
+                        onChange={(e) => updatePayerRow(i, { userId: e.target.value })}
+                        className={`flex-1 ${inputClass} py-1.5`}
+                      >
+                        {group.members.map((m) => (
+                          <option key={m.userId} value={m.userId}>
+                            {nameFor(m)}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={row.amount}
+                        onChange={(e) => updatePayerRow(i, { amount: e.target.value })}
+                        placeholder="Amount"
+                        className={`w-28 ${inputClass} py-1.5`}
+                      />
+                      <button type="button" onClick={() => removePayerRow(i)} className="text-xs text-ink-muted hover:text-rust transition-colors">
+                        remove
+                      </button>
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-between text-xs">
+                    {payerRows.length < group.members.length ? (
+                      <button type="button" onClick={addPayerRow} className={linkButtonClass}>
+                        + add another payer
+                      </button>
+                    ) : (
+                      <span />
+                    )}
+                    <span
+                      className={`figure ${(() => {
+                        const total = payerRows.reduce((s, r) => s + toMinor(r.amount || "0"), 0);
+                        const target = Math.round(Number(expenseAmount || "0") * 100);
+                        return total === target ? "text-ledger" : "text-rust";
+                      })()}`}
+                    >
+                      {(() => {
+                        const total = payerRows.reduce((s, r) => s + toMinor(r.amount || "0"), 0);
+                        const target = Math.round(Number(expenseAmount || "0") * 100);
+                        return `${formatMoney(total, currency)} of ${formatMoney(target, currency)} assigned`;
+                      })()}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
             <div className="text-sm">
               <span className="text-ink font-medium">Split</span>
               <div className="mt-1 flex gap-1.5">
