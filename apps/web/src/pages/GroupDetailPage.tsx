@@ -56,6 +56,10 @@ export function GroupDetailPage() {
   const group = groupQuery.data;
   const currency = group.defaultCurrency;
 
+  function nameFor(m: { userId: string; displayName: string }) {
+    return m.userId === user?.id ? `${m.displayName} (you)` : m.displayName;
+  }
+
   function toggleParticipant(userId: string) {
     setParticipants((prev) => {
       const next = new Set(prev);
@@ -147,10 +151,7 @@ export function GroupDetailPage() {
         <ul className="space-y-2">
           {group.members.map((m) => (
             <li key={m.userId} className="flex items-center justify-between text-sm">
-              <span className="text-slate-900">
-                {m.displayName}
-                {m.userId === user?.id ? " (you)" : ""}
-              </span>
+              <span className="text-slate-900">{nameFor(m)}</span>
               <div className="flex items-center gap-3">
                 <span className={m.netBalanceMinor >= 0 ? "text-green-700" : "text-red-700"}>
                   {m.netBalanceMinor === 0 ? "settled up" : formatMoney(m.netBalanceMinor, currency)}
@@ -193,7 +194,7 @@ export function GroupDetailPage() {
                 <option value="">Who paid?</option>
                 {group.members.map((m) => (
                   <option key={m.userId} value={m.userId}>
-                    {m.displayName}
+                    {nameFor(m)}
                   </option>
                 ))}
               </select>
@@ -201,7 +202,7 @@ export function GroupDetailPage() {
                 <option value="">Paid to whom?</option>
                 {group.members.map((m) => (
                   <option key={m.userId} value={m.userId}>
-                    {m.displayName}
+                    {nameFor(m)}
                   </option>
                 ))}
               </select>
@@ -246,7 +247,7 @@ export function GroupDetailPage() {
               <select value={paidBy} onChange={(e) => setPaidBy(e.target.value)} className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm">
                 {group.members.map((m) => (
                   <option key={m.userId} value={m.userId}>
-                    {m.displayName}
+                    {nameFor(m)}
                   </option>
                 ))}
               </select>
@@ -257,7 +258,7 @@ export function GroupDetailPage() {
                 {group.members.map((m) => (
                   <label key={m.userId} className="flex items-center gap-2">
                     <input type="checkbox" checked={participants.has(m.userId)} onChange={() => toggleParticipant(m.userId)} />
-                    {m.displayName}
+                    {nameFor(m)}
                   </label>
                 ))}
               </div>
@@ -276,7 +277,7 @@ export function GroupDetailPage() {
               <div>
                 <p className="text-slate-900">{expense.description}</p>
                 <p className="text-xs text-slate-500">
-                  {expense.payers.map((p) => p.displayName).join(", ")} paid · {formatDate(new Date(expense.expenseDate))}
+                  {expense.payers.map((p) => nameFor(p)).join(", ")} paid · {formatDate(new Date(expense.expenseDate))}
                 </p>
               </div>
               <span className="text-slate-900 font-medium">{formatMoney(expense.amountMinor, expense.currency)}</span>
