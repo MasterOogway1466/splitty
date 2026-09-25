@@ -83,11 +83,21 @@ export function computeParticipantShares(
         throw new InvalidSplitError("adjustments exceed the total amount");
       }
       const baseShares = splitByLargestRemainder(remainder, ids.map((id) => ({ id, weight: 1 })));
-      return split.participants.map((p) => ({
+      const shares = split.participants.map((p) => ({
         userId: p.userId,
         owedAmountMinor: (baseShares.get(p.userId) ?? 0) + p.adjustmentMinor,
         shareInput: { type: "adjustment" as const, adjustmentMinor: p.adjustmentMinor },
       }));
+      // A large negative adjustment on one person (e.g. a discount bigger
+      // than their own base share) can leave the *overall* remainder
+      // non-negative while still making that one person's own owed amount
+      // negative — a false debt in their favor. The remainder check above
+      // only guards the total; this guards each person individually.
+      const negative = shares.find((s) => s.owedAmountMinor < 0);
+      if (negative) {
+        throw new InvalidSplitError(`${negative.userId}'s adjustment leaves them owing a negative amount`);
+      }
+      return shares;
     }
   }
 }

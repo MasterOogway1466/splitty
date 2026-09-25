@@ -213,6 +213,7 @@ describe("expense split methods and multi-payer (Phase 2 sub-project A)", () => 
     });
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe("invalid_split");
+    expect(res.json().message).toContain("800"); // states the actual sum (400+400), not just "invalid"
   });
 
   it("rejects percentages that don't sum to 100", async () => {
@@ -230,6 +231,7 @@ describe("expense split methods and multi-payer (Phase 2 sub-project A)", () => 
     });
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe("invalid_split");
+    expect(res.json().message).toContain("66"); // states the actual sum (33+33), not just "invalid"
   });
 
   it("rejects adjustments that exceed the total", async () => {
@@ -247,6 +249,68 @@ describe("expense split methods and multi-payer (Phase 2 sub-project A)", () => 
     });
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe("invalid_split");
+  });
+
+  it("rejects a negative adjustment that would leave a participant owing a negative amount", async () => {
+    // Total 1000, split between A and B. A's adjustment is -1500 (bigger
+    // than the whole total). Remainder = 1000 - (-1500 + 0) = 2500, which
+    // is still non-negative, so the "adjustments exceed the total" guard
+    // alone does not catch this. But the equal base share of that
+    // remainder is 1250 each, so A's own owed amount is 1250 + (-1500) =
+    // -250: a false debt in A's favor rather than a rejected request. A
+    // per-participant negative-share check is required to catch it.
+    const { alice, bob, group } = await setupGroup("negadj");
+    const res = await ctx.app.inject({
+      method: "POST",
+      url: `/api/groups/${group.id}/expenses`,
+      headers: authHeader(alice.accessToken),
+      payload: {
+        description: "Shopping", amountMinor: 1000, currency: "USD",
+        payers: [{ userId: alice.userId, amountMinor: 1000 }],
+        splitMethod: "adjustment",
+        participants: [{ userId: alice.userId, adjustmentMinor: -1500 }, { userId: bob.userId, adjustmentMinor: 0 }],
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("invalid_split");
+  });
+
+  it("rejects a non-member listed as a participant in a non-equal split", async () => {
+    const { alice, group } = await setupGroup("nonmemberparticipant");
+    const outsider = await createVerifiedUser(ctx, { email: "nonmemberparticipant-dave@example.com", password: "password123", displayName: "Dave" });
+    const res = await ctx.app.inject({
+      method: "POST",
+      url: `/api/groups/${group.id}/expenses`,
+      headers: authHeader(alice.accessToken),
+      payload: {
+        description: "Dinner", amountMinor: 1000, currency: "USD",
+        payers: [{ userId: alice.userId, amountMinor: 1000 }],
+        splitMethod: "exact",
+        participants: [{ userId: alice.userId, amountMinor: 500 }, { userId: outsider.userId, amountMinor: 500 }],
+      },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe("not_group_member");
+  });
+
+  it("supports a non-equal split on a direct (non-group) expense", async () => {
+    const alice = await createVerifiedUser(ctx, { email: "directexact-alice@example.com", password: "password123", displayName: "Alice" });
+    const bob = await createVerifiedUser(ctx, { email: "directexact-bob@example.com", password: "password123", displayName: "Bob" });
+    const res = await ctx.app.inject({
+      method: "POST",
+      url: "/api/expenses",
+      headers: authHeader(alice.accessToken),
+      payload: {
+        description: "Direct dinner", amountMinor: 1000, currency: "USD",
+        payers: [{ userId: alice.userId, amountMinor: 1000 }],
+        splitMethod: "exact",
+        participants: [{ userId: alice.userId, amountMinor: 300 }, { userId: bob.userId, amountMinor: 700 }],
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const balancesRes = await ctx.app.inject({ method: "GET", url: `/api/balances/${bob.userId}`, headers: authHeader(alice.accessToken) });
+    const balances = balancesRes.json() as Array<{ currency: string; netMinor: number }>;
+    expect(balances).toEqual([{ currency: "USD", netMinor: 700 }]); // Alice paid 1000, owed 300 -> owed 700 by Bob
   });
 
   it("rejects a non-member listed as an extra payer", async () => {
