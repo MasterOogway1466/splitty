@@ -5,6 +5,7 @@ import {
   createExpenseRequestSchema,
   createGroupRequestSchema,
   createSettlementRequestSchema,
+  setMemberColorRequestSchema,
 } from "@splitty/shared";
 import { checkAndRecordRateLimit } from "../auth/rateLimit.js";
 import { activityFeed, expenses, settlements, users } from "../db/schema.js";
@@ -56,6 +57,25 @@ export async function registerGroupRoutes(app: FastifyInstance): Promise<void> {
   app.delete("/:groupId/members/:userId", async (request, reply) => {
     const { groupId, userId } = request.params as { groupId: string; userId: string };
     await groupService.removeMember(groupId, userId, request.currentUser!.id);
+    reply.status(204).send();
+  });
+
+  app.post("/:groupId/leave", async (request, reply) => {
+    const { groupId } = request.params as { groupId: string };
+    await groupService.leaveGroup(groupId, request.currentUser!.id);
+    reply.status(204).send();
+  });
+
+  app.patch("/:groupId/color", async (request, reply) => {
+    const { groupId } = request.params as { groupId: string };
+    const body = setMemberColorRequestSchema.parse(request.body);
+    await groupService.setMemberColor(groupId, request.currentUser!.id, body.color);
+    reply.status(204).send();
+  });
+
+  app.delete("/:groupId", async (request, reply) => {
+    const { groupId } = request.params as { groupId: string };
+    await groupService.deleteGroup(groupId, request.currentUser!.id);
     reply.status(204).send();
   });
 

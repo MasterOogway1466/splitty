@@ -90,3 +90,7 @@ export function apiGet(path: string): Promise<unknown> {
 export function apiDelete(path: string): Promise<unknown> {
   return apiFetch(path, { method: "DELETE" });
 }
+
+export function apiPatch(path: string, body?: unknown): Promise<unknown> {
+  return apiFetch(path, { method: "PATCH", body: body === undefined ? undefined : JSON.stringify(body) });
+}

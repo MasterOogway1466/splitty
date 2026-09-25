@@ -2,6 +2,10 @@ import { z } from "zod";
 
 export const groupTypeValues = ["trip", "house", "couple", "other"] as const;
 export const groupRoleValues = ["member", "admin"] as const;
+// Kept in sync with apps/api/src/db/schema.ts's memberColorValues by hand,
+// same as groupTypeValues/groupRoleValues above.
+export const memberColorValues = ["red", "orange", "amber", "green", "teal", "blue", "indigo", "purple", "pink", "slate"] as const;
+export type MemberColor = (typeof memberColorValues)[number];
 
 export const createGroupRequestSchema = z.object({
   name: z.string().trim().min(1).max(100),
@@ -15,11 +19,18 @@ export const addGroupMemberRequestSchema = z.object({
 });
 export type AddGroupMemberRequest = z.infer<typeof addGroupMemberRequestSchema>;
 
+export const setMemberColorRequestSchema = z.object({
+  color: z.enum(memberColorValues).nullable(),
+});
+export type SetMemberColorRequest = z.infer<typeof setMemberColorRequestSchema>;
+
 export const groupMemberSchema = z.object({
   userId: z.string().uuid(),
   displayName: z.string(),
   avatarUrl: z.string().nullable(),
   role: z.enum(groupRoleValues),
+  // Self-chosen, so two same-named members can be told apart at a glance.
+  color: z.enum(memberColorValues).nullable(),
   // This member's own net position within the group (paid - owed, adjusted
   // for settlements), in the group's default currency's minor units.
   // Positive = the group owes them; negative = they owe the group.
@@ -41,5 +52,8 @@ export type GroupSummary = z.infer<typeof groupSummarySchema>;
 
 export const groupDetailSchema = groupSummarySchema.extend({
   members: z.array(groupMemberSchema),
+  // Null for a group created before this column existed — see the
+  // matching comment on apps/api/src/db/schema.ts's groups.createdBy.
+  createdByUserId: z.string().uuid().nullable(),
 });
 export type GroupDetail = z.infer<typeof groupDetailSchema>;

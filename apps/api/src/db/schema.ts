@@ -129,6 +129,10 @@ export const accountLockouts = pgTable("account_lockouts", {
 export const groupTypeValues = ["trip", "house", "couple", "other"] as const;
 export const splitMethodValues = ["equal", "exact", "percentage", "shares", "adjustment", "itemized"] as const;
 export const groupRoleValues = ["member", "admin"] as const;
+// A fixed palette rather than free-form hex: keeps every color legible
+// (no picking near-white/unreadable values) and lets the frontend render
+// a swatch from a small lookup table.
+export const memberColorValues = ["red", "orange", "amber", "green", "teal", "blue", "indigo", "purple", "pink", "slate"] as const;
 
 // Group membership is the access boundary for group-scoped data (§5) —
 // whether `role` needs to be more than a plain member/admin split is
@@ -142,6 +146,11 @@ export const groups = pgTable("groups", {
   simplifyDebts: boolean("simplify_debts").notNull().default(false),
   defaultSplitMethod: text("default_split_method", { enum: splitMethodValues }).notNull().default("equal"),
   defaultSplitConfig: jsonb("default_split_config"),
+  // Nullable: groups created before this column existed have no recorded
+  // creator. Who may delete a group (below) is gated on this, so such a
+  // group simply can't be deleted by anyone — acceptable since it only
+  // affects pre-existing rows, never a newly created group.
+  createdBy: uuid("created_by").references(() => users.id),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
@@ -157,6 +166,9 @@ export const groupMembers = pgTable(
       .notNull()
       .references(() => users.id),
     role: text("role", { enum: groupRoleValues }).notNull().default("member"),
+    // Self-service only (§ member color) — lets someone tell two
+    // same-named members apart; null means no color chosen yet.
+    color: text("color", { enum: memberColorValues }),
     joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().default(sql`now()`),
     removedAt: timestamp("removed_at", { withTimezone: true }),
   },

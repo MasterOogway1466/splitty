@@ -43,3 +43,17 @@ export class NotExpenseParticipantError extends DomainError {
     super("Not a participant in this expense", "not_expense_participant");
   }
 }
+
+export class NotGroupCreatorError extends DomainError {
+  constructor() {
+    super("Only the person who created this group can delete it", "not_group_creator");
+  }
+}
+
+/** Like NonzeroBalanceError but for deleting a whole group: every
+ * member's balance must be zero, not just one target member's. */
+export class GroupNotSettledError extends DomainError {
+  constructor() {
+    super("Everyone in this group must be settled up before it can be deleted", "group_not_settled");
+  }
+}

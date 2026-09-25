@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { useParams } from "react-router-dom";
-import { formatDate, formatMoney } from "@splitty/shared";
+import { useNavigate, useParams } from "react-router-dom";
+import { formatDate, formatMoney, memberColorValues, type MemberColor } from "@splitty/shared";
 import { AppShell } from "../components/AppShell.js";
 import { ApiError } from "../lib/api.js";
 import { useAuth } from "../lib/AuthContext.js";
@@ -8,24 +8,49 @@ import {
   useAddGroupMember,
   useCreateGroupExpense,
   useCreateGroupSettlement,
+  useDeleteGroup,
   useGroup,
   useGroupExpenses,
+  useLeaveGroup,
   useRemoveGroupMember,
+  useSetMemberColor,
 } from "../lib/hooks.js";
+
+const COLOR_SWATCH_CLASS: Record<MemberColor, string> = {
+  red: "bg-red-500",
+  orange: "bg-orange-500",
+  amber: "bg-amber-500",
+  green: "bg-green-500",
+  teal: "bg-teal-500",
+  blue: "bg-blue-500",
+  indigo: "bg-indigo-500",
+  purple: "bg-purple-500",
+  pink: "bg-pink-500",
+  slate: "bg-slate-500",
+};
 
 export function GroupDetailPage() {
   const { groupId } = useParams<{ groupId: string }>();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const groupQuery = useGroup(groupId!);
   const expensesQuery = useGroupExpenses(groupId!);
   const addMember = useAddGroupMember(groupId!);
   const removeMember = useRemoveGroupMember(groupId!);
   const createExpense = useCreateGroupExpense(groupId!);
   const createSettlement = useCreateGroupSettlement(groupId!);
+  const leaveGroup = useLeaveGroup(groupId!);
+  const deleteGroup = useDeleteGroup(groupId!);
+  const setMemberColor = useSetMemberColor(groupId!);
 
   const [memberEmail, setMemberEmail] = useState("");
   const [memberError, setMemberError] = useState<string | null>(null);
   const [showAddMember, setShowAddMember] = useState(false);
+
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [expenseDescription, setExpenseDescription] = useState("");
   const [expenseAmount, setExpenseAmount] = useState("");
@@ -56,8 +81,9 @@ export function GroupDetailPage() {
   const group = groupQuery.data;
   const currency = group.defaultCurrency;
 
-  function nameFor(m: { userId: string; displayName: string }) {
-    return m.userId === user?.id ? `${m.displayName} (you)` : m.displayName;
+  function nameFor(m: { userId: string; displayName: string; color?: MemberColor | null }) {
+    const tags = [m.userId === user?.id ? "you" : null, m.color ?? null].filter((t): t is string => t !== null);
+    return tags.length ? `${m.displayName} (${tags.join(", ")})` : m.displayName;
   }
 
   function toggleParticipant(userId: string) {
@@ -118,12 +144,71 @@ export function GroupDetailPage() {
     setShowSettle(false);
   }
 
+  async function handleLeave() {
+    setLeaveError(null);
+    try {
+      await leaveGroup.mutateAsync();
+      navigate("/");
+    } catch (err) {
+      setLeaveError(err instanceof ApiError ? err.message : "Something went wrong");
+      setConfirmLeave(false);
+    }
+  }
+
+  async function handleDelete() {
+    setDeleteError(null);
+    try {
+      await deleteGroup.mutateAsync();
+      navigate("/");
+    } catch (err) {
+      setDeleteError(err instanceof ApiError ? err.message : "Something went wrong");
+      setConfirmDelete(false);
+    }
+  }
+
   return (
     <AppShell>
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-2 flex items-center justify-between">
         <h1 className="text-xl font-semibold text-slate-900">{group.name}</h1>
         <p className="text-sm text-slate-500">{currency} · simplify debts: {group.simplifyDebts ? "on" : "off"}</p>
       </div>
+
+      <div className="mb-6 flex items-center gap-4">
+        {confirmLeave ? (
+          <span className="text-sm text-slate-600">
+            Leave "{group.name}"?{" "}
+            <button onClick={handleLeave} disabled={leaveGroup.isPending} className="text-red-700 font-medium hover:underline">
+              {leaveGroup.isPending ? "Leaving…" : "Confirm"}
+            </button>{" "}
+            <button onClick={() => setConfirmLeave(false)} className="text-slate-500 hover:underline">
+              Cancel
+            </button>
+          </span>
+        ) : (
+          <button onClick={() => setConfirmLeave(true)} className="text-sm text-slate-500 hover:text-red-700 underline">
+            Leave group
+          </button>
+        )}
+
+        {group.createdByUserId === user?.id &&
+          (confirmDelete ? (
+            <span className="text-sm text-slate-600">
+              Delete "{group.name}" for everyone?{" "}
+              <button onClick={handleDelete} disabled={deleteGroup.isPending} className="text-red-700 font-medium hover:underline">
+                {deleteGroup.isPending ? "Deleting…" : "Confirm"}
+              </button>{" "}
+              <button onClick={() => setConfirmDelete(false)} className="text-slate-500 hover:underline">
+                Cancel
+              </button>
+            </span>
+          ) : (
+            <button onClick={() => setConfirmDelete(true)} className="text-sm text-slate-500 hover:text-red-700 underline">
+              Delete group
+            </button>
+          ))}
+      </div>
+      {leaveError && <p className="text-sm text-red-700 mb-4">{leaveError}</p>}
+      {deleteError && <p className="text-sm text-red-700 mb-4">{deleteError}</p>}
 
       <section className="mb-6 bg-white border border-slate-200 rounded-lg p-4">
         <div className="flex items-center justify-between mb-3">
@@ -151,8 +236,25 @@ export function GroupDetailPage() {
         <ul className="space-y-2">
           {group.members.map((m) => (
             <li key={m.userId} className="flex items-center justify-between text-sm">
-              <span className="text-slate-900">{nameFor(m)}</span>
+              <span className="flex items-center gap-2 text-slate-900">
+                {m.color && <span className={`inline-block h-2.5 w-2.5 rounded-full ${COLOR_SWATCH_CLASS[m.color]}`} />}
+                {nameFor(m)}
+              </span>
               <div className="flex items-center gap-3">
+                {m.userId === user?.id && (
+                  <select
+                    value={m.color ?? ""}
+                    onChange={(e) => setMemberColor.mutate((e.target.value || null) as MemberColor | null)}
+                    className="rounded-md border border-slate-300 px-1.5 py-0.5 text-xs"
+                  >
+                    <option value="">No color</option>
+                    {memberColorValues.map((c) => (
+                      <option key={c} value={c}>
+                        {c[0]!.toUpperCase() + c.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <span className={m.netBalanceMinor >= 0 ? "text-green-700" : "text-red-700"}>
                   {m.netBalanceMinor === 0 ? "settled up" : formatMoney(m.netBalanceMinor, currency)}
                 </span>

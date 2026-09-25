@@ -8,10 +8,11 @@ import type {
   GroupDetail,
   GroupSummary,
   InviteInfo,
+  MemberColor,
   PairwiseBalance,
   Settlement,
 } from "@splitty/shared";
-import { apiDelete, apiGet, apiPost } from "./api.js";
+import { apiDelete, apiGet, apiPatch, apiPost } from "./api.js";
 
 export function useGroups(): UseQueryResult<GroupSummary[]> {
   return useQuery({ queryKey: ["groups"], queryFn: () => apiGet("/groups") as Promise<GroupSummary[]> });
@@ -64,6 +65,36 @@ export function useRemoveGroupMember(groupId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (userId: string) => apiDelete(`/groups/${groupId}/members/${userId}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["groups", groupId] }),
+  });
+}
+
+export function useLeaveGroup(groupId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost(`/groups/${groupId}/leave`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["groups", groupId] });
+      void queryClient.invalidateQueries({ queryKey: ["groups"] });
+    },
+  });
+}
+
+export function useDeleteGroup(groupId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiDelete(`/groups/${groupId}`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["groups", groupId] });
+      void queryClient.invalidateQueries({ queryKey: ["groups"] });
+    },
+  });
+}
+
+export function useSetMemberColor(groupId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (color: MemberColor | null) => apiPatch(`/groups/${groupId}/color`, { color }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["groups", groupId] }),
   });
 }

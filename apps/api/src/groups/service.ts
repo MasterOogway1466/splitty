@@ -1,5 +1,5 @@
 import { and, eq, isNull } from "drizzle-orm";
-import type { GroupSummary, GroupDetail, GroupMember } from "@splitty/shared";
+import type { GroupSummary, GroupDetail, GroupMember, MemberColor } from "@splitty/shared";
 import type { Database } from "../db/client.js";
 import { groupMembers, groups, invites, users } from "../db/schema.js";
 import type { Env } from "../env.js";
@@ -7,7 +7,15 @@ import { generateOpaqueToken, hashOpaqueToken } from "../auth/tokens.js";
 import { sendCappedEmail } from "../mail/capped.js";
 import type { Mailer } from "../mail/mailer.js";
 import { computeGroupBalances } from "../ledger/balances.js";
-import { AlreadyMemberError, DomainError, GroupNotFoundError, NonzeroBalanceError, NotGroupMemberError } from "./errors.js";
+import {
+  AlreadyMemberError,
+  DomainError,
+  GroupNotFoundError,
+  GroupNotSettledError,
+  NonzeroBalanceError,
+  NotGroupCreatorError,
+  NotGroupMemberError,
+} from "./errors.js";
 
 const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -32,6 +40,7 @@ export class GroupService {
           name: input.name,
           groupType: input.groupType as GroupRow["groupType"],
           defaultCurrency: input.defaultCurrency,
+          createdBy: input.createdBy,
         })
         .returning();
       if (!group) throw new Error("Insert returned no row");
@@ -94,7 +103,7 @@ export class GroupService {
     if (!group || group.deletedAt) throw new GroupNotFoundError();
 
     const memberRows = await this.#db
-      .select({ userId: groupMembers.userId, role: groupMembers.role })
+      .select({ userId: groupMembers.userId, role: groupMembers.role, color: groupMembers.color })
       .from(groupMembers)
       .where(and(eq(groupMembers.groupId, groupId), isNull(groupMembers.removedAt)));
 
@@ -109,6 +118,7 @@ export class GroupService {
         displayName: user.displayName,
         avatarUrl: user.avatarUrl,
         role: row.role,
+        color: row.color,
         netBalanceMinor: balances.get(user.id) ?? 0,
       });
     }
@@ -122,6 +132,7 @@ export class GroupService {
       memberCount: members.length,
       yourBalanceMinor: balances.get(requestingUserId) ?? 0,
       members,
+      createdByUserId: group.createdBy,
     };
   }
 
@@ -193,5 +204,40 @@ export class GroupService {
       .update(groupMembers)
       .set({ removedAt: new Date() })
       .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, targetUserId)));
+  }
+
+  /** Same balance guard as removeMember, just always targeting yourself. */
+  async leaveGroup(groupId: string, userId: string): Promise<void> {
+    await this.removeMember(groupId, userId, userId);
+  }
+
+  /** Self-service only — a member sets their own color, never someone
+   * else's. */
+  async setMemberColor(groupId: string, userId: string, color: MemberColor | null): Promise<void> {
+    await this.requireMembership(groupId, userId);
+    await this.#db
+      .update(groupMembers)
+      .set({ color })
+      .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, userId)));
+  }
+
+  /** Only the group's recorded creator may delete it, and only once
+   * every current member's balance in the group is zero — deleting a
+   * group with live debts in it would erase the only record of who owes
+   * whom. Soft-deleted via the existing (previously unused) deletedAt
+   * column, same pattern as expenses/settlements. */
+  async deleteGroup(groupId: string, requesterId: string): Promise<void> {
+    await this.requireMembership(groupId, requesterId);
+
+    const [group] = await this.#db.select().from(groups).where(eq(groups.id, groupId));
+    if (!group || group.deletedAt) throw new GroupNotFoundError();
+    if (group.createdBy !== requesterId) throw new NotGroupCreatorError();
+
+    const balances = await computeGroupBalances(this.#db, groupId);
+    for (const balance of balances.values()) {
+      if (balance !== 0) throw new GroupNotSettledError();
+    }
+
+    await this.#db.update(groups).set({ deletedAt: new Date() }).where(eq(groups.id, groupId));
   }
 }
