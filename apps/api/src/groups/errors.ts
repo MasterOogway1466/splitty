@@ -57,3 +57,14 @@ export class GroupNotSettledError extends DomainError {
     super("Everyone in this group must be settled up before it can be deleted", "group_not_settled");
   }
 }
+
+/** Thrown when a split's own numbers don't add up — payers not
+ * summing to the total, exact/percentage participants not summing
+ * correctly, adjustments exceeding the total, or a duplicate userId
+ * anywhere in the split. Always a 400 via the generic DomainError
+ * branch in app.ts's error handler. */
+export class InvalidSplitError extends DomainError {
+  constructor(message: string) {
+    super(message, "invalid_split");
+  }
+}
