@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, ne } from "drizzle-orm";
 import type { GroupSummary, GroupDetail, GroupMember, MemberColor } from "@splitty/shared";
 import type { Database } from "../db/client.js";
 import { groupMembers, groups, invites, users } from "../db/schema.js";
@@ -13,8 +13,8 @@ import {
   GroupNotFoundError,
   GroupNotSettledError,
   NonzeroBalanceError,
-  NotGroupCreatorError,
   NotGroupMemberError,
+  NotGroupOwnerError,
 } from "./errors.js";
 
 const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -44,7 +44,7 @@ export class GroupService {
         })
         .returning();
       if (!group) throw new Error("Insert returned no row");
-      await tx.insert(groupMembers).values({ groupId: group.id, userId: input.createdBy, role: "admin" });
+      await tx.insert(groupMembers).values({ groupId: group.id, userId: input.createdBy, role: "owner" });
       return group;
     });
   }
@@ -132,7 +132,6 @@ export class GroupService {
       memberCount: members.length,
       yourBalanceMinor: balances.get(requestingUserId) ?? 0,
       members,
-      createdByUserId: group.createdBy,
     };
   }
 
@@ -189,10 +188,18 @@ export class GroupService {
 
   /** §6: removal blocked while the member's net balance *within that
    * group* is nonzero — deliberately narrower than account deletion's
-   * "balance with anyone, anywhere" guard. */
+   * "balance with anyone, anywhere" guard. If the departing member is
+   * the owner and others remain, ownership auto-transfers to whoever
+   * has been a member the longest — a group with active members always
+   * has exactly one owner. */
   async removeMember(groupId: string, targetUserId: string, requesterId: string): Promise<void> {
     await this.requireMembership(groupId, requesterId);
-    await this.requireMembership(groupId, targetUserId);
+
+    const [target] = await this.#db
+      .select({ role: groupMembers.role })
+      .from(groupMembers)
+      .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, targetUserId), isNull(groupMembers.removedAt)));
+    if (!target) throw new NotGroupMemberError();
 
     const balances = await computeGroupBalances(this.#db, groupId);
     const balance = balances.get(targetUserId) ?? 0;
@@ -200,10 +207,27 @@ export class GroupService {
       throw new NonzeroBalanceError(balance);
     }
 
-    await this.#db
-      .update(groupMembers)
-      .set({ removedAt: new Date() })
-      .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, targetUserId)));
+    await this.#db.transaction(async (tx) => {
+      await tx
+        .update(groupMembers)
+        .set({ removedAt: new Date() })
+        .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, targetUserId)));
+
+      if (target.role === "owner") {
+        const [successor] = await tx
+          .select({ userId: groupMembers.userId })
+          .from(groupMembers)
+          .where(and(eq(groupMembers.groupId, groupId), ne(groupMembers.userId, targetUserId), isNull(groupMembers.removedAt)))
+          .orderBy(asc(groupMembers.joinedAt))
+          .limit(1);
+        if (successor) {
+          await tx
+            .update(groupMembers)
+            .set({ role: "owner" })
+            .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, successor.userId)));
+        }
+      }
+    });
   }
 
   /** Same balance guard as removeMember, just always targeting yourself. */
@@ -221,17 +245,22 @@ export class GroupService {
       .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, userId)));
   }
 
-  /** Only the group's recorded creator may delete it, and only once
-   * every current member's balance in the group is zero — deleting a
-   * group with live debts in it would erase the only record of who owes
-   * whom. Soft-deleted via the existing (previously unused) deletedAt
-   * column, same pattern as expenses/settlements. */
+  /** Only the group's current owner may delete it (role, not the
+   * original creator — ownership can transfer, see removeMember), and
+   * only once every current member's balance in the group is zero —
+   * deleting a group with live debts in it would erase the only record
+   * of who owes whom. Soft-deleted via the existing (previously unused)
+   * deletedAt column, same pattern as expenses/settlements. */
   async deleteGroup(groupId: string, requesterId: string): Promise<void> {
-    await this.requireMembership(groupId, requesterId);
-
     const [group] = await this.#db.select().from(groups).where(eq(groups.id, groupId));
     if (!group || group.deletedAt) throw new GroupNotFoundError();
-    if (group.createdBy !== requesterId) throw new NotGroupCreatorError();
+
+    const [membership] = await this.#db
+      .select({ role: groupMembers.role })
+      .from(groupMembers)
+      .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, requesterId), isNull(groupMembers.removedAt)));
+    if (!membership) throw new NotGroupMemberError();
+    if (membership.role !== "owner") throw new NotGroupOwnerError();
 
     const balances = await computeGroupBalances(this.#db, groupId);
     for (const balance of balances.values()) {

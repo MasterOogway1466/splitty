@@ -44,9 +44,9 @@ export class NotExpenseParticipantError extends DomainError {
   }
 }
 
-export class NotGroupCreatorError extends DomainError {
+export class NotGroupOwnerError extends DomainError {
   constructor() {
-    super("Only the person who created this group can delete it", "not_group_creator");
+    super("Only this group's owner can delete it", "not_group_owner");
   }
 }
 

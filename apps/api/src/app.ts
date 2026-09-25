@@ -22,7 +22,7 @@ import {
   GroupNotSettledError,
   NonzeroBalanceError,
   NotExpenseParticipantError,
-  NotGroupCreatorError,
+  NotGroupOwnerError,
   NotGroupMemberError,
 } from "./groups/errors.js";
 import { GroupService } from "./groups/service.js";
@@ -105,7 +105,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     if (error instanceof GroupNotSettledError) {
       return reply.status(409).send({ error: error.code, message: error.message });
     }
-    if (error instanceof NotGroupCreatorError) {
+    if (error instanceof NotGroupOwnerError) {
       return reply.status(403).send({ error: error.code, message: error.message });
     }
     if (error instanceof DomainError) {

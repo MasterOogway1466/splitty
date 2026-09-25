@@ -1,7 +1,9 @@
 import { z } from "zod";
 
 export const groupTypeValues = ["trip", "house", "couple", "other"] as const;
-export const groupRoleValues = ["member", "admin"] as const;
+// "owner" is the sole member who may delete the group — exactly one
+// active member holds it at a time, auto-transferred if they leave.
+export const groupRoleValues = ["member", "admin", "owner"] as const;
 // Kept in sync with apps/api/src/db/schema.ts's memberColorValues by hand,
 // same as groupTypeValues/groupRoleValues above.
 export const memberColorValues = ["red", "orange", "amber", "green", "teal", "blue", "indigo", "purple", "pink", "slate"] as const;
@@ -52,8 +54,5 @@ export type GroupSummary = z.infer<typeof groupSummarySchema>;
 
 export const groupDetailSchema = groupSummarySchema.extend({
   members: z.array(groupMemberSchema),
-  // Null for a group created before this column existed — see the
-  // matching comment on apps/api/src/db/schema.ts's groups.createdBy.
-  createdByUserId: z.string().uuid().nullable(),
 });
 export type GroupDetail = z.infer<typeof groupDetailSchema>;

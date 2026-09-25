@@ -190,7 +190,7 @@ export function GroupDetailPage() {
           </button>
         )}
 
-        {group.createdByUserId === user?.id &&
+        {group.members.find((m) => m.userId === user?.id)?.role === "owner" &&
           (confirmDelete ? (
             <span className="text-sm text-slate-600">
               Delete "{group.name}" for everyone?{" "}
@@ -239,6 +239,7 @@ export function GroupDetailPage() {
               <span className="flex items-center gap-2 text-slate-900">
                 {m.color && <span className={`inline-block h-2.5 w-2.5 rounded-full ${COLOR_SWATCH_CLASS[m.color]}`} />}
                 {nameFor(m)}
+                {m.role === "owner" && <span className="text-xs text-amber-700">· Owner</span>}
               </span>
               <div className="flex items-center gap-3">
                 {m.userId === user?.id && (

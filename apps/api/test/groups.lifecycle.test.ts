@@ -48,7 +48,7 @@ describe("group leave / delete / member color", () => {
     expect(bobReadRes.statusCode).toBe(404);
   });
 
-  it("only the creator can delete the group, and only once everyone is settled", async () => {
+  it("only the owner can delete the group, and only once everyone is settled", async () => {
     const alice = await createVerifiedUser(ctx, { email: "alice8@example.com", password: "password123", displayName: "Alice" });
     const bob = await createVerifiedUser(ctx, { email: "bob8@example.com", password: "password123", displayName: "Bob" });
 
@@ -57,9 +57,10 @@ describe("group leave / delete / member color", () => {
     ).json();
     await ctx.app.inject({ method: "POST", url: `/api/groups/${group.id}/members`, headers: authHeader(alice.accessToken), payload: { email: "bob8@example.com" } });
 
-    // Bob didn't create the group — blocked regardless of balances.
-    const notCreatorRes = await ctx.app.inject({ method: "DELETE", url: `/api/groups/${group.id}`, headers: authHeader(bob.accessToken) });
-    expect(notCreatorRes.statusCode).toBe(403);
+    // Bob isn't the owner — blocked regardless of balances.
+    const notOwnerRes = await ctx.app.inject({ method: "DELETE", url: `/api/groups/${group.id}`, headers: authHeader(bob.accessToken) });
+    expect(notOwnerRes.statusCode).toBe(403);
+    expect(notOwnerRes.json().error).toBe("not_group_owner");
 
     await ctx.app.inject({
       method: "POST",
@@ -88,6 +89,33 @@ describe("group leave / delete / member color", () => {
     expect(aliceReadRes.statusCode).toBe(404);
     const listRes = await ctx.app.inject({ method: "GET", url: "/api/groups", headers: authHeader(alice.accessToken) });
     expect(listRes.json()).toEqual([]);
+  });
+
+  it("auto-transfers ownership to the longest-tenured remaining member when the owner leaves", async () => {
+    const alice = await createVerifiedUser(ctx, { email: "alice10@example.com", password: "password123", displayName: "Alice" });
+    const bob = await createVerifiedUser(ctx, { email: "bob10@example.com", password: "password123", displayName: "Bob" });
+    const carol = await createVerifiedUser(ctx, { email: "carol10@example.com", password: "password123", displayName: "Carol" });
+
+    const group = (
+      await ctx.app.inject({ method: "POST", url: "/api/groups", headers: authHeader(alice.accessToken), payload: { name: "Trio", defaultCurrency: "USD" } })
+    ).json();
+    // Joined in order: Bob, then Carol — Bob should be next in line.
+    await ctx.app.inject({ method: "POST", url: `/api/groups/${group.id}/members`, headers: authHeader(alice.accessToken), payload: { email: "bob10@example.com" } });
+    await ctx.app.inject({ method: "POST", url: `/api/groups/${group.id}/members`, headers: authHeader(alice.accessToken), payload: { email: "carol10@example.com" } });
+
+    const leaveRes = await ctx.app.inject({ method: "POST", url: `/api/groups/${group.id}/leave`, headers: authHeader(alice.accessToken) });
+    expect(leaveRes.statusCode).toBe(204);
+
+    const detailRes = await ctx.app.inject({ method: "GET", url: `/api/groups/${group.id}`, headers: authHeader(bob.accessToken) });
+    const members = detailRes.json().members as { userId: string; role: string }[];
+    expect(members.find((m) => m.userId === bob.userId)?.role).toBe("owner");
+    expect(members.find((m) => m.userId === carol.userId)?.role).toBe("member");
+
+    // Bob, the new owner, can now delete the group; Carol still can't.
+    const carolDeleteRes = await ctx.app.inject({ method: "DELETE", url: `/api/groups/${group.id}`, headers: authHeader(carol.accessToken) });
+    expect(carolDeleteRes.statusCode).toBe(403);
+    const bobDeleteRes = await ctx.app.inject({ method: "DELETE", url: `/api/groups/${group.id}`, headers: authHeader(bob.accessToken) });
+    expect(bobDeleteRes.statusCode).toBe(204);
   });
 
   it("lets a member set their own color, visible to the whole group, but rejects an unknown color", async () => {

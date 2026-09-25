@@ -128,7 +128,10 @@ export const accountLockouts = pgTable("account_lockouts", {
 
 export const groupTypeValues = ["trip", "house", "couple", "other"] as const;
 export const splitMethodValues = ["equal", "exact", "percentage", "shares", "adjustment", "itemized"] as const;
-export const groupRoleValues = ["member", "admin"] as const;
+// "owner" is the sole member who may delete the group — exactly one
+// active member holds it at a time, auto-transferred on departure (see
+// GroupService.removeMember).
+export const groupRoleValues = ["member", "admin", "owner"] as const;
 // A fixed palette rather than free-form hex: keeps every color legible
 // (no picking near-white/unreadable values) and lets the frontend render
 // a swatch from a small lookup table.
