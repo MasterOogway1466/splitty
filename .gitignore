@@ -12,3 +12,4 @@ infra/secrets/
 *.pem
 *.key
 HANDOFF.md
+docs/
