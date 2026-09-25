@@ -177,6 +177,10 @@ export function GroupDetailPage() {
     if (splitMethod === "equal") {
       payload = { ...base, splitMethod: "equal", participantUserIds: participantIds };
     } else if (splitMethod === "exact") {
+      if (participantIds.some((id) => !(toMinor(participantValues[id] || "0") > 0))) {
+        setExpenseError("Every participant needs an amount greater than zero");
+        return;
+      }
       const parts = participantIds.map((userId) => ({ userId, amountMinor: toMinor(participantValues[userId] || "0") }));
       const sum = parts.reduce((s, p) => s + p.amountMinor, 0);
       if (sum !== amountMinor) {
@@ -185,6 +189,10 @@ export function GroupDetailPage() {
       }
       payload = { ...base, splitMethod: "exact", participants: parts };
     } else if (splitMethod === "percentage") {
+      if (participantIds.some((id) => !(Number(participantValues[id] || "0") > 0))) {
+        setExpenseError("Every participant needs a percentage greater than zero");
+        return;
+      }
       const parts = participantIds.map((userId) => ({ userId, percentage: Number(participantValues[userId] || "0") }));
       const sum = parts.reduce((s, p) => s + p.percentage, 0);
       if (Math.round(sum * 100) !== 10000) {
@@ -219,14 +227,42 @@ export function GroupDetailPage() {
     setExpenseError(null);
     setExpenseDescription(expense.description);
     setExpenseAmount((expense.amountMinor / 100).toFixed(2));
-    setSplitMethod("exact");
-    setParticipants(new Set(expense.participants.map((p) => p.userId)));
-    const values: Record<string, string> = {};
-    for (const p of expense.participants) {
-      values[p.userId] = (p.owedAmountMinor / 100).toFixed(2);
+
+    // A payer/participant who has since left the group can't be
+    // resubmitted (the server would 404 them as a non-member) — drop
+    // them and let the running-total validation prompt the user to
+    // adjust, rather than silently sending a request that will fail.
+    const memberIds = new Set(group.members.map((m) => m.userId));
+    const currentPayers = expense.payers.filter((p) => memberIds.has(p.userId));
+    const currentParticipants = expense.participants.filter((p) => memberIds.has(p.userId));
+
+    if (expense.splitMethod === "equal") {
+      setSplitMethod("equal");
+      setParticipants(new Set(currentParticipants.map((p) => p.userId)));
+      setParticipantValues({});
+    } else {
+      // Non-equal originals are always duplicated as an exact dollar
+      // split from each participant's actual owedAmountMinor: the
+      // original percentages/shares/adjustments aren't exposed over the
+      // API, only the computed amount is. A participant who owed $0 is
+      // dropped rather than kept checked — the exact-split schema
+      // requires a positive amount, and someone who owed nothing has
+      // nothing to duplicate.
+      setSplitMethod("exact");
+      const nonZero = currentParticipants.filter((p) => p.owedAmountMinor > 0);
+      setParticipants(new Set(nonZero.map((p) => p.userId)));
+      const values: Record<string, string> = {};
+      for (const p of nonZero) {
+        values[p.userId] = (p.owedAmountMinor / 100).toFixed(2);
+      }
+      setParticipantValues(values);
     }
-    setParticipantValues(values);
-    setPayerRows(expense.payers.map((p) => ({ userId: p.userId, amount: (p.amountMinor / 100).toFixed(2) })));
+
+    setPayerRows(
+      currentPayers.length > 0
+        ? currentPayers.map((p) => ({ userId: p.userId, amount: (p.amountMinor / 100).toFixed(2) }))
+        : [{ userId: user?.id ?? "", amount: "" }],
+    );
   }
 
   async function handleSettle(e: FormEvent) {
