@@ -15,8 +15,24 @@ import {
 } from "./auth/errors.js";
 import type { Database } from "./db/client.js";
 import type { Env } from "./env.js";
+import {
+  AlreadyMemberError,
+  DomainError,
+  GroupNotFoundError,
+  NonzeroBalanceError,
+  NotExpenseParticipantError,
+  NotGroupMemberError,
+} from "./groups/errors.js";
+import { GroupService } from "./groups/service.js";
+import { InviteService } from "./invites/service.js";
 import type { Mailer } from "./mail/mailer.js";
+import { registerActivityRoutes } from "./routes/activity.js";
 import { registerAuthRoutes } from "./routes/auth.js";
+import { registerBalanceRoutes } from "./routes/balances.js";
+import { registerExpenseRoutes } from "./routes/expenses.js";
+import { registerGroupRoutes } from "./routes/groups.js";
+import { registerInviteRoutes } from "./routes/invites.js";
+import { registerSettlementRoutes } from "./routes/settlements.js";
 
 export interface BuildAppOptions {
   db: Database;
@@ -38,6 +54,8 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   app.decorate("db", opts.db);
   app.decorate("env", opts.env);
   app.decorate("authService", new AuthService(opts.db, opts.mailer, opts.env));
+  app.decorate("groupService", new GroupService(opts.db, opts.mailer, opts.env));
+  app.decorate("inviteService", new InviteService(opts.db, opts.env));
 
   // Registered before any routes: awaiting a plugin registration (below)
   // finalizes that plugin's routing tree immediately, so a handler added
@@ -70,6 +88,21 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     if (error instanceof AuthError) {
       return reply.status(400).send({ error: error.code, message: error.message });
     }
+    // GroupNotFoundError and NotGroupMemberError deliberately share a
+    // status code: a non-member gets the same response whether the group
+    // exists or not, so group existence is never leaked to non-members.
+    if (error instanceof GroupNotFoundError || error instanceof NotGroupMemberError || error instanceof NotExpenseParticipantError) {
+      return reply.status(404).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof AlreadyMemberError) {
+      return reply.status(409).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof NonzeroBalanceError) {
+      return reply.status(409).send({ error: error.code, message: error.message, balanceMinor: error.balanceMinor });
+    }
+    if (error instanceof DomainError) {
+      return reply.status(400).send({ error: error.code, message: error.message });
+    }
     if ("validation" in error && error.validation) {
       return reply.status(400).send({ error: "validation_error", message: error.message });
     }
@@ -89,6 +122,12 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   app.get("/api/health", async () => ({ status: "ok" }));
 
   await app.register(registerAuthRoutes, { prefix: "/api/auth" });
+  await app.register(registerGroupRoutes, { prefix: "/api/groups" });
+  await app.register(registerExpenseRoutes, { prefix: "/api/expenses" });
+  await app.register(registerSettlementRoutes, { prefix: "/api/settlements" });
+  await app.register(registerInviteRoutes, { prefix: "/api/invites" });
+  await app.register(registerActivityRoutes, { prefix: "/api/activity" });
+  await app.register(registerBalanceRoutes, { prefix: "/api/balances" });
 
   return app;
 }

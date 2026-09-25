@@ -8,6 +8,10 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string, displayName: string) => Promise<{ userId: string }>;
   logout: () => Promise<void>;
+  /** Adopts a session obtained outside the normal login call (e.g. an
+   * invite-accept response, which already returns an access token and
+   * sets the refresh cookie) without a redundant extra round trip. */
+  setSession: (accessToken: string, user: UserProfile) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -51,7 +55,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }
 
-  return <AuthContext.Provider value={{ user, loading, login, signup, logout }}>{children}</AuthContext.Provider>;
+  function setSession(accessToken: string, sessionUser: UserProfile) {
+    setAccessToken(accessToken);
+    setUser(sessionUser);
+  }
+
+  return <AuthContext.Provider value={{ user, loading, login, signup, logout, setSession }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthContextValue {

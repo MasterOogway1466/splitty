@@ -1,29 +1,116 @@
-import { useAuth } from "../lib/AuthContext.js";
+import { useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
+import { formatMoney } from "@splitty/shared";
+import { AppShell } from "../components/AppShell.js";
+import { useCreateGroup, useGlobalBalance, useGroups } from "../lib/hooks.js";
 
 export function HomePage() {
-  const { user, logout } = useAuth();
+  const groupsQuery = useGroups();
+  const balanceQuery = useGlobalBalance();
+  const createGroup = useCreateGroup();
+  const [showForm, setShowForm] = useState(false);
+  const [name, setName] = useState("");
+  const [currency, setCurrency] = useState("USD");
+
+  async function handleCreate(e: FormEvent) {
+    e.preventDefault();
+    await createGroup.mutateAsync({ name, groupType: "other", defaultCurrency: currency });
+    setName("");
+    setShowForm(false);
+  }
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-10">
-      <div className="max-w-md mx-auto bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-        <h1 className="text-xl font-semibold text-slate-900">Welcome, {user?.displayName}</h1>
-        <p className="mt-2 text-sm text-slate-600">{user?.email}</p>
-        {!user?.emailVerified && (
-          <p className="mt-4 rounded-md bg-amber-50 border border-amber-200 text-amber-800 text-sm px-3 py-2">
-            Verify your email to unlock groups and expenses.
-          </p>
+    <AppShell>
+      <section className="mb-6">
+        <h1 className="text-lg font-semibold text-slate-900 mb-2">Overview</h1>
+        {balanceQuery.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+        {balanceQuery.data && balanceQuery.data.length === 0 && <p className="text-sm text-slate-500">You're all settled up.</p>}
+        {balanceQuery.data && balanceQuery.data.length > 0 && (
+          <ul className="space-y-1">
+            {balanceQuery.data.map((b) => (
+              <li key={b.currency} className={`text-sm ${b.netMinor >= 0 ? "text-green-700" : "text-red-700"}`}>
+                {b.netMinor >= 0
+                  ? `You are owed ${formatMoney(b.netMinor, b.currency)}`
+                  : `You owe ${formatMoney(-b.netMinor, b.currency)}`}
+              </li>
+            ))}
+          </ul>
         )}
-        <p className="mt-6 text-sm text-slate-500">
-          Groups, expenses, and balances land in Phase 1 — this page just proves signup, verification, and login
-          work end to end.
-        </p>
-        <button
-          onClick={() => void logout()}
-          className="mt-6 w-full rounded-md border border-slate-300 text-slate-700 text-sm font-medium py-2 hover:bg-slate-50"
-        >
-          Log out
-        </button>
-      </div>
-    </div>
+      </section>
+
+      <section>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-semibold text-slate-900">Groups</h2>
+          <button
+            onClick={() => setShowForm((v) => !v)}
+            className="text-sm rounded-md bg-slate-900 text-white px-3 py-1.5 hover:bg-slate-700"
+          >
+            {showForm ? "Cancel" : "New group"}
+          </button>
+        </div>
+
+        {showForm && (
+          <form onSubmit={handleCreate} className="mb-4 bg-white border border-slate-200 rounded-lg p-4 space-y-3">
+            <label className="block">
+              <span className="block text-sm font-medium text-slate-700 mb-1">Group name</span>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              />
+            </label>
+            <label className="block">
+              <span className="block text-sm font-medium text-slate-700 mb-1">Default currency</span>
+              <input
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value.toUpperCase())}
+                maxLength={3}
+                required
+                className="w-24 rounded-md border border-slate-300 px-3 py-2 text-sm uppercase"
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={createGroup.isPending}
+              className="rounded-md bg-slate-900 text-white text-sm font-medium px-4 py-2 hover:bg-slate-700 disabled:opacity-50"
+            >
+              {createGroup.isPending ? "Creating…" : "Create group"}
+            </button>
+          </form>
+        )}
+
+        {groupsQuery.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+        {groupsQuery.data && groupsQuery.data.length === 0 && (
+          <p className="text-sm text-slate-500">No groups yet — create one to start splitting expenses.</p>
+        )}
+        <ul className="space-y-2">
+          {groupsQuery.data?.map((group) => (
+            <li key={group.id}>
+              <Link
+                to={`/groups/${group.id}`}
+                className="block bg-white border border-slate-200 rounded-lg p-4 hover:border-slate-400 transition-colors"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-slate-900">{group.name}</p>
+                    <p className="text-xs text-slate-500">
+                      {group.memberCount} member{group.memberCount === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                  <p className={`text-sm font-medium ${group.yourBalanceMinor >= 0 ? "text-green-700" : "text-red-700"}`}>
+                    {group.yourBalanceMinor === 0
+                      ? "Settled up"
+                      : group.yourBalanceMinor > 0
+                        ? `+${formatMoney(group.yourBalanceMinor, group.defaultCurrency)}`
+                        : formatMoney(group.yourBalanceMinor, group.defaultCurrency)}
+                  </p>
+                </div>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </AppShell>
   );
 }

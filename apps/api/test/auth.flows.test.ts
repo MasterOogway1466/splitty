@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createTestContext, truncateAuthTables, type TestContext } from "./setup.js";
+import { createTestContext, truncateAllTestTables, type TestContext } from "./setup.js";
 
 function extractToken(text: string): string {
   const match = text.match(/token=([\w-]+)/);
@@ -17,7 +17,7 @@ describe("auth flows (docs/PLAN-PUBLIC.md §12)", () => {
     await ctx.close();
   });
   beforeEach(async () => {
-    await truncateAuthTables(ctx.db);
+    await truncateAllTestTables(ctx.db);
     ctx.mailer.sent.length = 0;
   });
 

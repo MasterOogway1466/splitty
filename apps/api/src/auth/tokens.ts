@@ -1,5 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import jwt from "jsonwebtoken";
+import type { Database } from "../db/client.js";
+import { refreshTokens } from "../db/schema.js";
 
 // Opaque tokens (refresh tokens, email-verify/reset tokens, §5): the raw
 // token is only ever shown to the client once (in a cookie or an email
@@ -27,4 +29,17 @@ export function verifyAccessToken(token: string, secret: string): AccessTokenPay
     throw new Error("Invalid access token payload");
   }
   return { sub: decoded.sub };
+}
+
+/** Shared by every call site that needs to start a session (login,
+ * refresh rotation, invite acceptance) so token issuance stays in one
+ * place rather than duplicated per caller. */
+export async function issueRefreshToken(db: Database, userId: string, ttlDays: number): Promise<string> {
+  const raw = generateOpaqueToken();
+  await db.insert(refreshTokens).values({
+    userId,
+    tokenHash: hashOpaqueToken(raw),
+    expiresAt: new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000),
+  });
+  return raw;
 }

@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance } from "fastify";
 import {
   confirmPasswordResetSchema,
   loginRequestSchema,
@@ -9,27 +9,11 @@ import {
 import { checkAndRecordRateLimit } from "../auth/rateLimit.js";
 import { toUserProfile } from "../auth/service.js";
 import { InvalidRefreshTokenError, RateLimitedError } from "../auth/errors.js";
+import { REFRESH_COOKIE_NAME, clearRefreshCookie, setRefreshCookie } from "../auth/cookies.js";
 import { authenticate } from "../plugins/authenticate.js";
-
-const REFRESH_COOKIE_NAME = "refresh_token";
-const REFRESH_COOKIE_PATH = "/api/auth";
 
 export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
   const { authService, env, db } = app;
-
-  function setRefreshCookie(reply: FastifyReply, token: string): void {
-    reply.setCookie(REFRESH_COOKIE_NAME, token, {
-      httpOnly: true,
-      secure: env.COOKIE_SECURE,
-      sameSite: "lax",
-      path: REFRESH_COOKIE_PATH,
-      maxAge: env.REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60,
-    });
-  }
-
-  function clearRefreshCookie(reply: FastifyReply): void {
-    reply.clearCookie(REFRESH_COOKIE_NAME, { path: REFRESH_COOKIE_PATH });
-  }
 
   // §5 Phase 0 requirement: rate limiting on signup, per-IP.
   app.post("/signup", async (request, reply) => {
@@ -63,7 +47,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     if (!accountCheck.allowed) throw new RateLimitedError(600);
 
     const { user, accessToken, refreshTokenRaw } = await authService.login(body);
-    setRefreshCookie(reply, refreshTokenRaw);
+    setRefreshCookie(reply, env, refreshTokenRaw);
     return { accessToken, user: toUserProfile(user) };
   });
 
@@ -77,7 +61,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       throw new InvalidRefreshTokenError();
     }
     const { accessToken, refreshTokenRaw } = await authService.refresh(raw);
-    setRefreshCookie(reply, refreshTokenRaw);
+    setRefreshCookie(reply, env, refreshTokenRaw);
     return { accessToken };
   });
 

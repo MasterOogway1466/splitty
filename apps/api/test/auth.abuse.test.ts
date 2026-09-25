@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { rateLimitEvents, users } from "../src/db/schema.js";
-import { createTestContext, truncateAuthTables, type TestContext } from "./setup.js";
+import { createTestContext, truncateAllTestTables, type TestContext } from "./setup.js";
 
 describe("abuse surface (docs/PLAN-PUBLIC.md §5/§12)", () => {
   let ctx: TestContext;
@@ -13,7 +13,7 @@ describe("abuse surface (docs/PLAN-PUBLIC.md §5/§12)", () => {
     await ctx.close();
   });
   beforeEach(async () => {
-    await truncateAuthTables(ctx.db);
+    await truncateAllTestTables(ctx.db);
     ctx.mailer.sent.length = 0;
   });
 

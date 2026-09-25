@@ -86,3 +86,7 @@ export function apiPost(path: string, body?: unknown): Promise<unknown> {
 export function apiGet(path: string): Promise<unknown> {
   return apiFetch(path, { method: "GET" });
 }
+
+export function apiDelete(path: string): Promise<unknown> {
+  return apiFetch(path, { method: "DELETE" });
+}
