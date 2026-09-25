@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { formatDate, formatMoney, memberColorValues, type MemberColor } from "@splitty/shared";
+import { formatDate, formatMoney, memberColorValues, type CreateExpenseRequest, type MemberColor } from "@splitty/shared";
 import { AppShell } from "../components/AppShell.js";
 import { ApiError } from "../lib/api.js";
 import { useAuth } from "../lib/AuthContext.js";
@@ -37,6 +37,19 @@ const inputClass =
 const primaryButtonClass = "rounded-md bg-ledger text-paper text-sm font-medium px-4 py-2 hover:bg-ledger-dark transition-colors disabled:opacity-50";
 const linkButtonClass = "text-sm text-ink-muted hover:text-ledger transition-colors";
 
+type SplitMethodChoice = "equal" | "exact" | "percentage" | "shares" | "adjustment";
+const SPLIT_METHOD_LABELS: Record<SplitMethodChoice, string> = {
+  equal: "Equal",
+  exact: "Exact",
+  percentage: "%",
+  shares: "Shares",
+  adjustment: "+/−",
+};
+
+function toMinor(dollars: string): number {
+  return Math.round(Number(dollars) * 100);
+}
+
 export function GroupDetailPage() {
   const { groupId } = useParams<{ groupId: string }>();
   const { user } = useAuth();
@@ -62,7 +75,9 @@ export function GroupDetailPage() {
 
   const [expenseDescription, setExpenseDescription] = useState("");
   const [expenseAmount, setExpenseAmount] = useState("");
-  const [paidBy, setPaidBy] = useState(user?.id ?? "");
+  const [splitMethod, setSplitMethod] = useState<SplitMethodChoice>("equal");
+  const [participantValues, setParticipantValues] = useState<Record<string, string>>({});
+  const [payerRows, setPayerRows] = useState<{ userId: string; amount: string }[]>([{ userId: user?.id ?? "", amount: "" }]);
   const [participants, setParticipants] = useState<Set<string>>(new Set());
   const [expenseError, setExpenseError] = useState<string | null>(null);
   const [showAddExpense, setShowAddExpense] = useState(false);
@@ -127,14 +142,58 @@ export function GroupDetailPage() {
       setExpenseError("Pick at least one participant");
       return;
     }
+
+    if (payerRows.some((row) => !row.userId || (payerRows.length > 1 && !(toMinor(row.amount) > 0)))) {
+      setExpenseError("Every payer needs an amount greater than zero");
+      return;
+    }
+    const payers =
+      payerRows.length === 1
+        ? [{ userId: payerRows[0]!.userId, amountMinor }]
+        : payerRows.map((row) => ({ userId: row.userId, amountMinor: toMinor(row.amount) }));
+    if (payerRows.length > 1) {
+      const payersTotal = payers.reduce((s, p) => s + p.amountMinor, 0);
+      if (payersTotal !== amountMinor) {
+        setExpenseError(`Payer amounts add up to ${formatMoney(payersTotal, currency)}, not ${formatMoney(amountMinor, currency)}`);
+        return;
+      }
+    }
+
+    const participantIds = [...participants];
+    const base = { description: expenseDescription, amountMinor, currency, payers };
+    let payload: CreateExpenseRequest;
+    if (splitMethod === "equal") {
+      payload = { ...base, splitMethod: "equal", participantUserIds: participantIds };
+    } else if (splitMethod === "exact") {
+      const parts = participantIds.map((userId) => ({ userId, amountMinor: toMinor(participantValues[userId] || "0") }));
+      const sum = parts.reduce((s, p) => s + p.amountMinor, 0);
+      if (sum !== amountMinor) {
+        setExpenseError(`Amounts add up to ${formatMoney(sum, currency)}, not ${formatMoney(amountMinor, currency)}`);
+        return;
+      }
+      payload = { ...base, splitMethod: "exact", participants: parts };
+    } else if (splitMethod === "percentage") {
+      const parts = participantIds.map((userId) => ({ userId, percentage: Number(participantValues[userId] || "0") }));
+      const sum = parts.reduce((s, p) => s + p.percentage, 0);
+      if (Math.round(sum * 100) !== 10000) {
+        setExpenseError(`Percentages add up to ${sum}%, not 100%`);
+        return;
+      }
+      payload = { ...base, splitMethod: "percentage", participants: parts };
+    } else if (splitMethod === "shares") {
+      const parts = participantIds.map((userId) => ({ userId, shares: Number(participantValues[userId] || "0") }));
+      if (parts.some((p) => !(p.shares > 0))) {
+        setExpenseError("Every participant needs a positive share count");
+        return;
+      }
+      payload = { ...base, splitMethod: "shares", participants: parts };
+    } else {
+      const parts = participantIds.map((userId) => ({ userId, adjustmentMinor: toMinor(participantValues[userId] || "0") }));
+      payload = { ...base, splitMethod: "adjustment", participants: parts };
+    }
+
     try {
-      await createExpense.mutateAsync({
-        description: expenseDescription,
-        amountMinor,
-        currency,
-        paidBy,
-        participantUserIds: [...participants],
-      });
+      await createExpense.mutateAsync(payload);
       setExpenseDescription("");
       setExpenseAmount("");
       setShowAddExpense(false);
@@ -290,8 +349,11 @@ export function GroupDetailPage() {
             <button
               onClick={() => {
                 setShowAddExpense((v) => !v);
+                setSplitMethod("equal");
                 setParticipants(new Set(group.members.map((m) => m.userId)));
-                setPaidBy(user?.id ?? "");
+                setParticipantValues({});
+                setPayerRows([{ userId: user?.id ?? "", amount: "" }]);
+                setExpenseError(null);
               }}
               className={linkButtonClass}
             >
@@ -366,15 +428,53 @@ export function GroupDetailPage() {
               </select>
             </label>
             <div className="text-sm">
-              <span className="text-ink font-medium">Split equally between</span>
+              <span className="text-ink font-medium">Split</span>
+              <div className="mt-1 flex gap-1.5">
+                {(Object.keys(SPLIT_METHOD_LABELS) as SplitMethodChoice[]).map((method) => (
+                  <button
+                    key={method}
+                    type="button"
+                    onClick={() => setSplitMethod(method)}
+                    className={`rounded-md px-2.5 py-1 text-xs border transition-colors ${
+                      splitMethod === method ? "bg-ledger text-paper border-ledger" : "border-line text-ink-muted hover:border-ledger"
+                    }`}
+                  >
+                    {SPLIT_METHOD_LABELS[method]}
+                  </button>
+                ))}
+              </div>
               <div className="mt-1.5 space-y-1.5">
                 {group.members.map((m) => (
                   <label key={m.userId} className="flex items-center gap-2 text-ink-muted">
                     <input type="checkbox" checked={participants.has(m.userId)} onChange={() => toggleParticipant(m.userId)} className="accent-ledger" />
-                    {nameFor(m)}
+                    <span className="flex-1">{nameFor(m)}</span>
+                    {splitMethod !== "equal" && participants.has(m.userId) && (
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={participantValues[m.userId] ?? ""}
+                        onChange={(e) => setParticipantValues((prev) => ({ ...prev, [m.userId]: e.target.value }))}
+                        placeholder={splitMethod === "percentage" ? "%" : splitMethod === "shares" ? "shares" : splitMethod === "adjustment" ? "+/−" : "$"}
+                        className="w-24 rounded-md border border-line px-2 py-1 text-xs text-ink focus:outline-none focus:ring-2 focus:ring-ledger/40"
+                      />
+                    )}
                   </label>
                 ))}
               </div>
+              {(splitMethod === "exact" || splitMethod === "percentage") && (
+                <p className="mt-1 text-xs figure text-ink-muted">
+                  {splitMethod === "exact"
+                    ? (() => {
+                        const total = [...participants].reduce((s, id) => s + toMinor(participantValues[id] || "0"), 0);
+                        const target = Math.round(Number(expenseAmount || "0") * 100);
+                        return `${formatMoney(total, currency)} of ${formatMoney(target, currency)} assigned`;
+                      })()
+                    : (() => {
+                        const total = [...participants].reduce((s, id) => s + Number(participantValues[id] || "0"), 0);
+                        return `${total}% of 100% assigned`;
+                      })()}
+                </p>
+              )}
             </div>
             {expenseError && <p className="text-sm text-rust">{expenseError}</p>}
             <button type="submit" disabled={createExpense.isPending} className={primaryButtonClass}>
