@@ -44,7 +44,7 @@ describe("cross-account data isolation (docs/PLAN-PUBLIC.md §5/§12)", () => {
       method: "POST",
       url: `/api/groups/${group.id}/expenses`,
       headers: authHeader(mallory.accessToken),
-      payload: { description: "Sneaky", amountMinor: 100, currency: "USD", paidBy: mallory.userId, participantUserIds: [mallory.userId] },
+      payload: { description: "Sneaky", amountMinor: 100, currency: "USD", splitMethod: "equal", payers: [{ userId: mallory.userId, amountMinor: 100 }], participantUserIds: [mallory.userId] },
     });
     expect(expenseRes.statusCode).toBe(404);
 
@@ -58,7 +58,8 @@ describe("cross-account data isolation (docs/PLAN-PUBLIC.md §5/§12)", () => {
         description: "Trying to rope in an outsider",
         amountMinor: 100,
         currency: "USD",
-        paidBy: bob.userId,
+        splitMethod: "equal",
+        payers: [{ userId: bob.userId, amountMinor: 100 }],
         participantUserIds: [bob.userId, mallory.userId],
       },
     });
@@ -79,7 +80,7 @@ describe("cross-account data isolation (docs/PLAN-PUBLIC.md §5/§12)", () => {
       method: "POST",
       url: "/api/expenses",
       headers: authHeader(bob.accessToken),
-      payload: { description: "Concert ticket", amountMinor: 5000, currency: "USD", paidBy: bob.userId, participantUserIds: [bob.userId, carol.userId] },
+      payload: { description: "Concert ticket", amountMinor: 5000, currency: "USD", splitMethod: "equal", payers: [{ userId: bob.userId, amountMinor: 5000 }], participantUserIds: [bob.userId, carol.userId] },
     });
     expect(expenseRes.statusCode).toBe(201);
 
@@ -89,7 +90,7 @@ describe("cross-account data isolation (docs/PLAN-PUBLIC.md §5/§12)", () => {
       method: "POST",
       url: "/api/expenses",
       headers: authHeader(mallory.accessToken),
-      payload: { description: "Uninvited", amountMinor: 100, currency: "USD", paidBy: bob.userId, participantUserIds: [carol.userId] },
+      payload: { description: "Uninvited", amountMinor: 100, currency: "USD", splitMethod: "equal", payers: [{ userId: bob.userId, amountMinor: 100 }], participantUserIds: [carol.userId] },
     });
     expect(injectRes.statusCode).toBe(404);
 

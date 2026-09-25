@@ -49,7 +49,8 @@ describe("Phase 1 vertical slice (docs/PLAN-PUBLIC.md §15)", () => {
         description: "Dinner",
         amountMinor: 10000,
         currency: "USD",
-        paidBy: alice.userId,
+        splitMethod: "equal",
+        payers: [{ userId: alice.userId, amountMinor: 10000 }],
         participantUserIds: [alice.userId, bob.userId],
       },
     });
@@ -105,7 +106,7 @@ describe("Phase 1 vertical slice (docs/PLAN-PUBLIC.md §15)", () => {
       method: "POST",
       url: `/api/groups/${group.id}/expenses`,
       headers: authHeader(alice.accessToken),
-      payload: { description: "Snacks", amountMinor: 1000, currency: "USD", paidBy: alice.userId, participantUserIds: ids },
+      payload: { description: "Snacks", amountMinor: 1000, currency: "USD", splitMethod: "equal", payers: [{ userId: alice.userId, amountMinor: 1000 }], participantUserIds: ids },
     });
     const expense = expenseRes.json();
     const shares = new Map(expense.participants.map((p: { userId: string; owedAmountMinor: number }) => [p.userId, p.owedAmountMinor]));

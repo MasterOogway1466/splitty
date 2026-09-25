@@ -28,7 +28,7 @@ describe("balance aggregation across groups and direct expenses (docs/PLAN-PUBLI
       method: "POST",
       url: `/api/groups/${group1.id}/expenses`,
       headers: authHeader(alice.accessToken),
-      payload: { description: "G1 expense", amountMinor: 2000, currency: "USD", paidBy: alice.userId, participantUserIds: [alice.userId, bob.userId] },
+      payload: { description: "G1 expense", amountMinor: 2000, currency: "USD", splitMethod: "equal", payers: [{ userId: alice.userId, amountMinor: 2000 }], participantUserIds: [alice.userId, bob.userId] },
     });
 
     // Group 2: Bob pays $6, split with Alice -> Alice owes Bob $3.
@@ -40,7 +40,7 @@ describe("balance aggregation across groups and direct expenses (docs/PLAN-PUBLI
       method: "POST",
       url: `/api/groups/${group2.id}/expenses`,
       headers: authHeader(bob.accessToken),
-      payload: { description: "G2 expense", amountMinor: 600, currency: "USD", paidBy: bob.userId, participantUserIds: [alice.userId, bob.userId] },
+      payload: { description: "G2 expense", amountMinor: 600, currency: "USD", splitMethod: "equal", payers: [{ userId: bob.userId, amountMinor: 600 }], participantUserIds: [alice.userId, bob.userId] },
     });
 
     // Direct: Alice pays $5 for something only Bob owes her for entirely
@@ -49,7 +49,7 @@ describe("balance aggregation across groups and direct expenses (docs/PLAN-PUBLI
       method: "POST",
       url: "/api/expenses",
       headers: authHeader(alice.accessToken),
-      payload: { description: "Direct IOU", amountMinor: 500, currency: "USD", paidBy: alice.userId, participantUserIds: [bob.userId] },
+      payload: { description: "Direct IOU", amountMinor: 500, currency: "USD", splitMethod: "equal", payers: [{ userId: alice.userId, amountMinor: 500 }], participantUserIds: [bob.userId] },
     });
 
     // Net: Bob owes Alice 1000 (G1) - 300 (G2, i.e. Alice owes Bob 300) + 500 (direct) = 1200.
@@ -77,7 +77,7 @@ describe("balance aggregation across groups and direct expenses (docs/PLAN-PUBLI
       method: "POST",
       url: "/api/expenses",
       headers: authHeader(alice.accessToken),
-      payload: { description: "Direct", amountMinor: 1000, currency: "USD", paidBy: alice.userId, participantUserIds: [alice.userId, bob.userId] },
+      payload: { description: "Direct", amountMinor: 1000, currency: "USD", splitMethod: "equal", payers: [{ userId: alice.userId, amountMinor: 1000 }], participantUserIds: [alice.userId, bob.userId] },
     });
     // Alice is owed 500. Bob pays her back 200 of it.
     await ctx.app.inject({

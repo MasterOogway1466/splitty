@@ -27,7 +27,7 @@ describe("group leave / delete / member color", () => {
       method: "POST",
       url: `/api/groups/${group.id}/expenses`,
       headers: authHeader(alice.accessToken),
-      payload: { description: "Hotel", amountMinor: 4000, currency: "USD", paidBy: alice.userId, participantUserIds: [alice.userId, bob.userId] },
+      payload: { description: "Hotel", amountMinor: 4000, currency: "USD", splitMethod: "equal", payers: [{ userId: alice.userId, amountMinor: 4000 }], participantUserIds: [alice.userId, bob.userId] },
     });
 
     const blockedRes = await ctx.app.inject({ method: "POST", url: `/api/groups/${group.id}/leave`, headers: authHeader(bob.accessToken) });
@@ -66,7 +66,7 @@ describe("group leave / delete / member color", () => {
       method: "POST",
       url: `/api/groups/${group.id}/expenses`,
       headers: authHeader(alice.accessToken),
-      payload: { description: "Groceries", amountMinor: 2000, currency: "USD", paidBy: alice.userId, participantUserIds: [alice.userId, bob.userId] },
+      payload: { description: "Groceries", amountMinor: 2000, currency: "USD", splitMethod: "equal", payers: [{ userId: alice.userId, amountMinor: 2000 }], participantUserIds: [alice.userId, bob.userId] },
     });
 
     // Alice created it, but Bob's balance is still nonzero.

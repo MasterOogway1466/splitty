@@ -27,7 +27,7 @@ describe("group member removal guard (docs/PLAN-PUBLIC.md §6)", () => {
       method: "POST",
       url: `/api/groups/${group.id}/expenses`,
       headers: authHeader(alice.accessToken),
-      payload: { description: "Rent", amountMinor: 2000, currency: "USD", paidBy: alice.userId, participantUserIds: [alice.userId, bob.userId] },
+      payload: { description: "Rent", amountMinor: 2000, currency: "USD", splitMethod: "equal", payers: [{ userId: alice.userId, amountMinor: 2000 }], participantUserIds: [alice.userId, bob.userId] },
     });
 
     const removeRes = await ctx.app.inject({
