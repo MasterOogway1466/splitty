@@ -4,7 +4,7 @@ import { createExpenseRequestSchema } from "@splitty/shared";
 import { checkAndRecordRateLimit } from "../auth/rateLimit.js";
 import { expenseParticipants, expensePayers, expenses } from "../db/schema.js";
 import { NotExpenseParticipantError } from "../groups/errors.js";
-import { createExpense } from "../ledger/expenses.js";
+import { createExpense, participantUserIdsOf } from "../ledger/expenses.js";
 import { authenticate } from "../plugins/authenticate.js";
 import { serializeExpense } from "./serializers.js";
 
@@ -49,13 +49,11 @@ export async function registerExpenseRoutes(app: FastifyInstance): Promise<void>
     if (!rl.allowed) return reply.status(429).send({ error: "rate_limited", message: "Too many expenses created today" });
 
     const body = createExpenseRequestSchema.parse(request.body);
-    const participantIds = new Set(body.participantUserIds);
-    if (participantIds.size !== body.participantUserIds.length) {
-      return reply.status(400).send({ error: "validation_error", message: "participantUserIds must not contain duplicates" });
-    }
+    const payerIds = body.payers.map((p) => p.userId);
+    const participantIds = participantUserIdsOf(body);
     // No group membership to lean on here — the requester has to be one
     // of the people actually involved in the expense they're recording.
-    if (userId !== body.paidBy && !participantIds.has(userId)) {
+    if (!payerIds.includes(userId) && !participantIds.includes(userId)) {
       throw new NotExpenseParticipantError();
     }
 
@@ -67,8 +65,8 @@ export async function registerExpenseRoutes(app: FastifyInstance): Promise<void>
       currency: body.currency,
       categoryId: body.categoryId ?? null,
       expenseDate: body.expenseDate ? new Date(body.expenseDate) : new Date(),
-      paidBy: body.paidBy,
-      participantUserIds: body.participantUserIds,
+      payers: body.payers,
+      split: body,
       createdBy: userId,
     });
     const [row] = await db.select().from(expenses).where(eq(expenses.id, id));

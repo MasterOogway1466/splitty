@@ -10,7 +10,7 @@ import {
 import { checkAndRecordRateLimit } from "../auth/rateLimit.js";
 import { activityFeed, expenses, settlements, users } from "../db/schema.js";
 import { NotGroupMemberError } from "../groups/errors.js";
-import { createExpense } from "../ledger/expenses.js";
+import { createExpense, participantUserIdsOf } from "../ledger/expenses.js";
 import { createSettlement } from "../ledger/settlements.js";
 import { authenticate } from "../plugins/authenticate.js";
 import { serializeExpense, serializeSettlement } from "./serializers.js";
@@ -100,14 +100,10 @@ export async function registerGroupRoutes(app: FastifyInstance): Promise<void> {
     if (!rl.allowed) return reply.status(429).send({ error: "rate_limited", message: "Too many expenses created today" });
 
     const body = createExpenseRequestSchema.parse(request.body);
-    const participantIds = new Set(body.participantUserIds);
-    if (participantIds.size !== body.participantUserIds.length) {
-      return reply.status(400).send({ error: "validation_error", message: "participantUserIds must not contain duplicates" });
-    }
     // Every payer and participant must actually be a current member of
     // this group — the isolation boundary applies to who an expense can
     // involve, not just who can create one.
-    for (const memberId of new Set([body.paidBy, ...body.participantUserIds])) {
+    for (const memberId of new Set([...body.payers.map((p) => p.userId), ...participantUserIdsOf(body)])) {
       if (!(await groupService.isMember(groupId, memberId))) {
         throw new NotGroupMemberError();
       }
@@ -121,8 +117,8 @@ export async function registerGroupRoutes(app: FastifyInstance): Promise<void> {
       currency: body.currency,
       categoryId: body.categoryId ?? null,
       expenseDate: body.expenseDate ? new Date(body.expenseDate) : new Date(),
-      paidBy: body.paidBy,
-      participantUserIds: body.participantUserIds,
+      payers: body.payers,
+      split: body,
       createdBy: userId,
     });
     const [row] = await db.select().from(expenses).where(eq(expenses.id, id));
