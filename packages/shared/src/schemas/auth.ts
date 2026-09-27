@@ -39,8 +39,16 @@ export const userProfileSchema = z.object({
   timezone: z.string(),
   emailVerified: z.boolean(),
   isAdmin: z.boolean(),
+  createdAt: z.string(),
 });
 export type UserProfile = z.infer<typeof userProfileSchema>;
+
+export const updateProfileRequestSchema = z.object({
+  displayName: z.string().trim().min(1).max(80).optional(),
+  defaultCurrency: z.string().length(3).optional(),
+  timezone: z.string().trim().min(1).max(100).optional(),
+});
+export type UpdateProfileRequest = z.infer<typeof updateProfileRequestSchema>;
 
 export const loginResponseSchema = z.object({
   accessToken: z.string(),

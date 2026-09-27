@@ -4,6 +4,7 @@ import {
   loginRequestSchema,
   requestPasswordResetSchema,
   signupRequestSchema,
+  updateProfileRequestSchema,
   verifyEmailRequestSchema,
 } from "@splitty/shared";
 import { checkAndRecordRateLimit } from "../auth/rateLimit.js";
@@ -103,5 +104,15 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     "/me",
     { preHandler: (request, reply) => authenticate(app, request, reply) },
     async (request) => toUserProfile(request.currentUser!),
+  );
+
+  app.patch(
+    "/me",
+    { preHandler: (request, reply) => authenticate(app, request, reply) },
+    async (request) => {
+      const body = updateProfileRequestSchema.parse(request.body);
+      const updated = await authService.updateProfile(request.currentUser!.id, body);
+      return toUserProfile(updated);
+    },
   );
 }

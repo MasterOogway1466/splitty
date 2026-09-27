@@ -1,5 +1,5 @@
 import { and, eq, isNull } from "drizzle-orm";
-import type { UserProfile } from "@splitty/shared";
+import type { UpdateProfileRequest, UserProfile } from "@splitty/shared";
 import type { Database } from "../db/client.js";
 import { emailTokens, refreshTokens, users } from "../db/schema.js";
 import type { Env } from "../env.js";
@@ -36,6 +36,7 @@ export function toUserProfile(user: UserRow): UserProfile {
     timezone: user.timezone,
     emailVerified: user.emailVerifiedAt !== null,
     isAdmin: user.isAdmin,
+    createdAt: user.createdAt.toISOString(),
   };
 }
 
@@ -224,5 +225,20 @@ export class AuthService {
   async getUserById(userId: string): Promise<UserRow | null> {
     const [user] = await this.#db.select().from(users).where(eq(users.id, userId));
     return user ?? null;
+  }
+
+  async updateProfile(userId: string, input: UpdateProfileRequest): Promise<UserRow> {
+    const patch: Partial<Pick<UserRow, "displayName" | "defaultCurrency" | "timezone">> = {};
+    if (input.displayName !== undefined) patch.displayName = input.displayName;
+    if (input.defaultCurrency !== undefined) patch.defaultCurrency = input.defaultCurrency;
+    if (input.timezone !== undefined) patch.timezone = input.timezone;
+
+    const [updated] = await this.#db
+      .update(users)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(eq(users.id, userId))
+      .returning();
+    if (!updated) throw new Error("Update returned no row");
+    return updated;
   }
 }
