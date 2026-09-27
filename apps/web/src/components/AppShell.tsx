@@ -21,7 +21,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Link>
           </nav>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-paper/75">{user?.displayName}</span>
+            <Link to="/profile" className="text-sm text-paper/75 hover:text-paper transition-colors">
+              {user?.displayName}
+            </Link>
             <button onClick={() => void logout()} className="text-sm text-paper/75 hover:text-paper transition-colors">
               Log out
             </button>

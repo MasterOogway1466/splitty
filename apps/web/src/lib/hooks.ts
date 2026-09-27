@@ -11,6 +11,8 @@ import type {
   MemberColor,
   PairwiseBalance,
   Settlement,
+  UpdateProfileRequest,
+  UserProfile,
 } from "@splitty/shared";
 import { apiDelete, apiGet, apiPatch, apiPost } from "./api.js";
 
@@ -43,6 +45,12 @@ export function usePeopleBalances(): UseQueryResult<PairwiseBalance[]> {
 
 export function useInviteInfo(token: string): UseQueryResult<InviteInfo> {
   return useQuery({ queryKey: ["invites", token], queryFn: () => apiGet(`/invites/${token}`) as Promise<InviteInfo> });
+}
+
+export function useUpdateProfile() {
+  return useMutation({
+    mutationFn: (input: UpdateProfileRequest) => apiPatch("/auth/me", input) as Promise<UserProfile>,
+  });
 }
 
 export function useCreateGroup() {

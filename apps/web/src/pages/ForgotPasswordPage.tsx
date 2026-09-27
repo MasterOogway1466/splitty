@@ -1,10 +1,12 @@
 import { useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { AuthLayout, SubmitButton, SuccessBanner, TextField } from "../components/AuthLayout.js";
 import { apiPost } from "../lib/api.js";
 
 export function ForgotPasswordPage() {
-  const [email, setEmail] = useState("");
+  const location = useLocation();
+  const prefillEmail = (location.state as { email?: string } | null)?.email ?? "";
+  const [email, setEmail] = useState(prefillEmail);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
 

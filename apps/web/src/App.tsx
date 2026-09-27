@@ -8,6 +8,7 @@ import { FriendsPage } from "./pages/FriendsPage.js";
 import { GroupDetailPage } from "./pages/GroupDetailPage.js";
 import { HomePage } from "./pages/HomePage.js";
 import { LoginPage } from "./pages/LoginPage.js";
+import { ProfilePage } from "./pages/ProfilePage.js";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage.js";
 import { SignupPage } from "./pages/SignupPage.js";
 import { VerifyEmailPage } from "./pages/VerifyEmailPage.js";
@@ -44,6 +45,14 @@ export function App() {
           element={
             <ProtectedRoute>
               <FriendsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/profile"
+          element={
+            <ProtectedRoute>
+              <ProfilePage />
             </ProtectedRoute>
           }
         />

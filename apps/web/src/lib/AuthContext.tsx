@@ -12,6 +12,9 @@ interface AuthContextValue {
    * invite-accept response, which already returns an access token and
    * sets the refresh cookie) without a redundant extra round trip. */
   setSession: (accessToken: string, user: UserProfile) => void;
+  /** Reflects a profile update (PATCH /auth/me) into the current
+   * session without a token change or re-login. */
+  updateUser: (user: UserProfile) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -60,7 +63,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(sessionUser);
   }
 
-  return <AuthContext.Provider value={{ user, loading, login, signup, logout, setSession }}>{children}</AuthContext.Provider>;
+  function updateUser(updatedUser: UserProfile) {
+    setUser(updatedUser);
+  }
+
+  return (
+    <AuthContext.Provider value={{ user, loading, login, signup, logout, setSession, updateUser }}>{children}</AuthContext.Provider>
+  );
 }
 
 export function useAuth(): AuthContextValue {
