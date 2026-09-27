@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CURRENCY_CODES } from "../currency.js";
 
 export const groupTypeValues = ["trip", "house", "couple", "other"] as const;
 // "owner" is the sole member who may delete the group — exactly one
@@ -12,7 +13,7 @@ export type MemberColor = (typeof memberColorValues)[number];
 export const createGroupRequestSchema = z.object({
   name: z.string().trim().min(1).max(100),
   groupType: z.enum(groupTypeValues).default("other"),
-  defaultCurrency: z.string().length(3).default("USD"),
+  defaultCurrency: z.enum(CURRENCY_CODES).default("USD"),
 });
 export type CreateGroupRequest = z.infer<typeof createGroupRequestSchema>;
 

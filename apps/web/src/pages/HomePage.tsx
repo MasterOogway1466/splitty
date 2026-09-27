@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { formatMoney } from "@splitty/shared";
+import { CURRENCY_CODES, formatMoney } from "@splitty/shared";
 import { AppShell } from "../components/AppShell.js";
 import { useCreateGroup, useGlobalBalance, useGroups } from "../lib/hooks.js";
 
@@ -73,13 +73,18 @@ export function HomePage() {
             </label>
             <label className="block">
               <span className="block text-sm font-medium text-ink mb-1">Default currency</span>
-              <input
+              <select
                 value={currency}
-                onChange={(e) => setCurrency(e.target.value.toUpperCase())}
-                maxLength={3}
+                onChange={(e) => setCurrency(e.target.value)}
                 required
-                className="w-24 rounded-md border border-line px-3 py-2 text-sm text-ink uppercase focus:outline-none focus:ring-2 focus:ring-ledger/40 focus:border-ledger"
-              />
+                className="w-32 rounded-md border border-line px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-ledger/40 focus:border-ledger"
+              >
+                {CURRENCY_CODES.map((code) => (
+                  <option key={code} value={code}>
+                    {code}
+                  </option>
+                ))}
+              </select>
             </label>
             <button
               type="submit"

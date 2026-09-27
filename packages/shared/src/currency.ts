@@ -23,6 +23,11 @@ export const CURRENCY_MINOR_UNIT_EXPONENT: Record<string, number> = {
   OMR: 3,
 };
 
+// The full set of currencies the app supports, for building selectors and
+// server-side validation — every currency a user can ever be offered comes
+// from this list, matching the seeded `currencies` DB table.
+export const CURRENCY_CODES = Object.keys(CURRENCY_MINOR_UNIT_EXPONENT) as [string, ...string[]];
+
 export function minorUnitExponent(currencyCode: string): number {
   const exponent = CURRENCY_MINOR_UNIT_EXPONENT[currencyCode.toUpperCase()];
   if (exponent === undefined) {

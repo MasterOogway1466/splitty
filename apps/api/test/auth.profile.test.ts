@@ -51,13 +51,24 @@ describe("profile update (PATCH /api/auth/me)", () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it("rejects an invalid currency code", async () => {
+  it("rejects a malformed currency code", async () => {
     const alice = await createVerifiedUser(ctx, { email: "alice3@example.com", password: "password123", displayName: "Alice" });
     const res = await ctx.app.inject({
       method: "PATCH",
       url: "/api/auth/me",
       headers: authHeader(alice.accessToken),
       payload: { defaultCurrency: "EU" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("rejects a well-formed but unsupported currency code", async () => {
+    const alice = await createVerifiedUser(ctx, { email: "alice5@example.com", password: "password123", displayName: "Alice" });
+    const res = await ctx.app.inject({
+      method: "PATCH",
+      url: "/api/auth/me",
+      headers: authHeader(alice.accessToken),
+      payload: { defaultCurrency: "ZZZ" },
     });
     expect(res.statusCode).toBe(400);
   });

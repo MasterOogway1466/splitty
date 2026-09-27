@@ -15,6 +15,17 @@ describe("Phase 1 vertical slice (docs/PLAN-PUBLIC.md §15)", () => {
     ctx.mailer.sent.length = 0;
   });
 
+  it("rejects an unsupported currency code on group creation", async () => {
+    const alice = await createVerifiedUser(ctx, { email: "alice-badcur@example.com", password: "password123", displayName: "Alice" });
+    const res = await ctx.app.inject({
+      method: "POST",
+      url: "/api/groups",
+      headers: authHeader(alice.accessToken),
+      payload: { name: "Trip", defaultCurrency: "ZZZ" }, // well-formed (3 letters) but not a supported currency
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
   it("create group -> add existing member -> equal-split expense -> correct balances -> settle -> zeroed -> remove", async () => {
     const alice = await createVerifiedUser(ctx, { email: "alice@example.com", password: "password123", displayName: "Alice" });
     const bob = await createVerifiedUser(ctx, { email: "bob@example.com", password: "password123", displayName: "Bob" });

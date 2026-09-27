@@ -1,11 +1,22 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { formatDate } from "@splitty/shared";
+import { CURRENCY_CODES, formatDate } from "@splitty/shared";
 import { AppShell } from "../components/AppShell.js";
 import { ErrorBanner, SubmitButton, SuccessBanner, TextField } from "../components/AuthLayout.js";
 import { ApiError } from "../lib/api.js";
 import { useAuth } from "../lib/AuthContext.js";
 import { useUpdateProfile } from "../lib/hooks.js";
+
+// The full IANA timezone database, from the runtime itself — no list to
+// maintain, and it stays current as the database updates. Falls back to
+// just UTC on a browser old enough not to support the API.
+const TIMEZONES: string[] = (() => {
+  try {
+    return Intl.supportedValuesOf("timeZone");
+  } catch {
+    return ["UTC"];
+  }
+})();
 
 export function ProfilePage() {
   const { user, updateUser } = useAuth();
@@ -26,8 +37,8 @@ export function ProfilePage() {
     try {
       const updated = await updateProfile.mutateAsync({
         displayName: displayName.trim(),
-        defaultCurrency: defaultCurrency.toUpperCase(),
-        timezone: timezone.trim(),
+        defaultCurrency,
+        timezone,
       });
       updateUser(updated);
       setSuccess(true);
@@ -72,15 +83,34 @@ export function ProfilePage() {
           <TextField label="Display name" value={displayName} onChange={setDisplayName} required />
           <label className="block">
             <span className="block text-sm font-medium text-ink mb-1">Default currency</span>
-            <input
+            <select
               value={defaultCurrency}
-              onChange={(e) => setDefaultCurrency(e.target.value.toUpperCase())}
-              maxLength={3}
+              onChange={(e) => setDefaultCurrency(e.target.value)}
               required
-              className="w-24 rounded-md border border-line px-3 py-2 text-sm text-ink uppercase focus:outline-none focus:ring-2 focus:ring-ledger/40 focus:border-ledger"
-            />
+              className="w-32 rounded-md border border-line px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-ledger/40 focus:border-ledger"
+            >
+              {CURRENCY_CODES.map((code) => (
+                <option key={code} value={code}>
+                  {code}
+                </option>
+              ))}
+            </select>
           </label>
-          <TextField label="Timezone" value={timezone} onChange={setTimezone} required />
+          <label className="block">
+            <span className="block text-sm font-medium text-ink mb-1">Timezone</span>
+            <select
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+              required
+              className="w-full rounded-md border border-line px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-ledger/40 focus:border-ledger"
+            >
+              {TIMEZONES.map((tz) => (
+                <option key={tz} value={tz}>
+                  {tz}
+                </option>
+              ))}
+            </select>
+          </label>
           <SubmitButton disabled={updateProfile.isPending}>{updateProfile.isPending ? "Saving…" : "Save changes"}</SubmitButton>
         </form>
         <p className="mt-4 text-sm text-ink-muted">
