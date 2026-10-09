@@ -2,10 +2,6 @@
 
 Two deployment tracks are planned and documented in `docs/`:
 
-- **`docs/PLAN.md`** — Tailscale-only, no accounts, small trusted circle.
-- **`docs/PLAN-PUBLIC.md`** — public self-service signup, hosted on Oracle Cloud Always Free. **This is the track currently implemented.**
-
-Phase 0 (accounts, auth, rate limiting/lockout, the Docker Compose stack, backups) is done. See `docs/PLAN-PUBLIC.md` §15 for the phased roadmap and `docs/RUNBOOK.md` for deploying this to a real Oracle VM.
 
 ## Repo layout
 
@@ -14,7 +10,6 @@ apps/api          Fastify + TypeScript backend
 apps/web           React + Vite frontend
 packages/shared    Shared TS types, zod schemas, money/currency utilities
 infra              docker-compose.yml, Caddyfile, Dockerfiles, backup/restore scripts
-docs               PLAN.md, PLAN-PUBLIC.md, RUNBOOK.md
 ```
 
 ## Local development
