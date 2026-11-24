@@ -186,16 +186,13 @@ export async function createExpense(db: Database, input: CreateExpenseInput): Pr
 
     if (input.groupId === null) {
       // §6: friend_links created implicitly on the first direct
-      // expense/IOU between two users — one link per (payer,
-      // participant) pair, generalized from the single-payer version
-      // to loop over every payer now that there can be more than one.
-      const participantIds = participantShares.map((p) => p.userId);
-      for (const payerId of payerIds) {
-        for (const participantId of participantIds) {
-          if (participantId === payerId) continue;
-          const [a, b] = [payerId, participantId].sort();
-          await tx.insert(friendLinks).values({ userAId: a!, userBId: b! }).onConflictDoNothing();
-        }
+      // expense/IOU. Only the creator is linked: they were checked as
+      // connected to everyone here, but the others may be strangers to
+      // each other, and a link grants the right to record direct entries.
+      for (const otherId of recipientIds) {
+        if (otherId === input.createdBy) continue;
+        const [a, b] = [input.createdBy, otherId].sort();
+        await tx.insert(friendLinks).values({ userAId: a!, userBId: b! }).onConflictDoNothing();
       }
     }
   });

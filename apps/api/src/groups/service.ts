@@ -1,10 +1,9 @@
-import { and, asc, eq, isNull, ne } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull, ne } from "drizzle-orm";
 import type { GroupSummary, GroupDetail, GroupMember, MemberColor } from "@splitty/shared";
 import type { Database } from "../db/client.js";
-import { groupMembers, groups, invites, users } from "../db/schema.js";
+import { groupMembers, groups, users } from "../db/schema.js";
 import type { Env } from "../env.js";
-import { generateOpaqueToken, hashOpaqueToken } from "../auth/tokens.js";
-import { sendCappedEmail } from "../mail/capped.js";
+import { createInviteLink, reserveInviteSend } from "../invites/send.js";
 import type { Mailer } from "../mail/mailer.js";
 import { computeGroupBalances } from "../ledger/balances.js";
 import {
@@ -17,8 +16,6 @@ import {
   NotGroupMemberError,
   NotGroupOwnerError,
 } from "./errors.js";
-
-const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 type GroupRow = typeof groups.$inferSelect;
 
@@ -52,20 +49,24 @@ export class GroupService {
 
   /** docs/PLAN-PUBLIC.md §5: the access boundary — throws if `userId` is
    * not a current member (a removed member's old row must not grant
-   * access, hence `removedAt` still null). */
+   * access, hence `removedAt` still null), or the group is deleted. */
   async requireMembership(groupId: string, userId: string): Promise<void> {
-    const [row] = await this.#db
-      .select({ userId: groupMembers.userId })
-      .from(groupMembers)
-      .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, userId), isNull(groupMembers.removedAt)));
-    if (!row) throw new NotGroupMemberError();
+    if (!(await this.isMember(groupId, userId))) throw new NotGroupMemberError();
   }
 
   async isMember(groupId: string, userId: string): Promise<boolean> {
     const [row] = await this.#db
       .select({ userId: groupMembers.userId })
       .from(groupMembers)
-      .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, userId), isNull(groupMembers.removedAt)));
+      .innerJoin(groups, eq(groups.id, groupMembers.groupId))
+      .where(
+        and(
+          eq(groupMembers.groupId, groupId),
+          eq(groupMembers.userId, userId),
+          isNull(groupMembers.removedAt),
+          isNull(groups.deletedAt),
+        ),
+      );
     return !!row;
   }
 
@@ -152,48 +153,59 @@ export class GroupService {
     const [group] = await this.#db.select().from(groups).where(eq(groups.id, groupId));
     if (!group || group.deletedAt) throw new GroupNotFoundError();
 
-    const [existingUser] = await this.#db.select().from(users).where(eq(users.email, email));
+    let [user] = await this.#db.select().from(users).where(eq(users.email, email));
+    if (user?.status === "suspended" || user?.status === "deleted") {
+      throw new DomainError("This account cannot be added to a group", "account_unavailable");
+    }
 
-    if (existingUser) {
-      if (existingUser.status === "suspended" || existingUser.status === "deleted") {
-        throw new DomainError("This account cannot be added to a group", "account_unavailable");
-      }
-      if (await this.isMember(groupId, existingUser.id)) {
-        throw new AlreadyMemberError();
-      }
-      await this.#db.insert(groupMembers).values({ groupId, userId: existingUser.id, role: "member" });
+    if (user?.status === "active") {
+      if (await this.isMember(groupId, user.id)) throw new AlreadyMemberError();
+      await this.#upsertMember(this.#db, groupId, user.id);
       return;
     }
 
-    // No account with this email at all: create the placeholder + invite.
-    const [placeholder] = await this.#db
-      .insert(users)
-      .values({ email, displayName: email.split("@")[0] ?? email, status: "invited" })
-      .returning();
-    if (!placeholder) throw new Error("Insert returned no row");
+    // No account yet, or an unclaimed placeholder: (re)send an invite. An
+    // invitee already in the group gets a fresh link rather than an error.
+    await reserveInviteSend(this.#db, inviterId, email);
 
-    await this.#db.insert(groupMembers).values({ groupId, userId: placeholder.id, role: "member" });
-
-    const rawToken = generateOpaqueToken();
-    await this.#db.insert(invites).values({
-      inviterId,
-      inviteeEmail: email,
-      placeholderUserId: placeholder.id,
-      groupId,
-      tokenHash: hashOpaqueToken(rawToken),
-      expiresAt: new Date(Date.now() + INVITE_TOKEN_TTL_MS),
+    const link = await this.#db.transaction(async (tx) => {
+      if (!user) {
+        // Another request may have just created the same placeholder.
+        await tx
+          .insert(users)
+          .values({ email, displayName: email.split("@")[0] ?? email, status: "invited" })
+          .onConflictDoNothing();
+        [user] = await tx.select().from(users).where(eq(users.email, email));
+      }
+      if (!user) throw new Error("Placeholder missing after insert");
+      await this.#upsertMember(tx, groupId, user.id);
+      return createInviteLink(tx, this.#env, { inviterId, email, placeholderUserId: user.id, groupId });
     });
 
     const [inviter] = await this.#db.select().from(users).where(eq(users.id, inviterId));
-    const link = `${this.#env.APP_ORIGIN}/accept-invite?token=${rawToken}`;
-    await sendCappedEmail(this.#db, this.#mailer, placeholder.id, {
+    const inviterName = inviter?.displayName ?? "Someone";
+    await this.#mailer.send({
       to: email,
-      subject: `${inviter?.displayName ?? "Someone"} added you to "${group.name}" on Splitty`,
-      text: `${inviter?.displayName ?? "Someone"} added you to the group "${group.name}" on Splitty.\n\nClick here to set up your account:\n\n${link}\n\nThis link expires in 7 days.`,
+      subject: `${inviterName} added you to "${group.name}" on Splitty`,
+      text: `${inviterName} added you to the group "${group.name}" on Splitty.\n\nClick here to set up your account:\n\n${link}\n\nThis link expires in 7 days.`,
     });
   }
 
-  /** §6: removal blocked while the member's net balance *within that
+  /** A returning member reuses their old row (the key is group + user) and
+   * rejoins as a plain member; a current member is left untouched. */
+  async #upsertMember(db: Pick<Database, "insert">, groupId: string, userId: string): Promise<void> {
+    await db
+      .insert(groupMembers)
+      .values({ groupId, userId, role: "member" })
+      .onConflictDoUpdate({
+        target: [groupMembers.groupId, groupMembers.userId],
+        set: { removedAt: null, role: "member", joinedAt: new Date() },
+        setWhere: isNotNull(groupMembers.removedAt),
+      });
+  }
+
+  /** Only the owner may remove someone else; anyone may remove themselves.
+   * §6: removal blocked while the member's net balance *within that
    * group* is nonzero — deliberately narrower than account deletion's
    * "balance with anyone, anywhere" guard. If the departing member is
    * the owner and others remain, ownership auto-transfers to whoever
@@ -207,6 +219,7 @@ export class GroupService {
       .from(groupMembers)
       .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, targetUserId), isNull(groupMembers.removedAt)));
     if (!target) throw new NotGroupMemberError();
+    if (targetUserId !== requesterId) await this.#requireOwner(groupId, requesterId);
 
     const balances = await computeGroupBalances(this.#db, groupId);
     const balance = balances.get(targetUserId) ?? 0;
@@ -242,6 +255,15 @@ export class GroupService {
     await this.removeMember(groupId, userId, userId);
   }
 
+  async #requireOwner(groupId: string, userId: string): Promise<void> {
+    const [membership] = await this.#db
+      .select({ role: groupMembers.role })
+      .from(groupMembers)
+      .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, userId), isNull(groupMembers.removedAt)));
+    if (!membership) throw new NotGroupMemberError();
+    if (membership.role !== "owner") throw new NotGroupOwnerError();
+  }
+
   /** Self-service only — a member sets their own color, never someone
    * else's. */
   async setMemberColor(groupId: string, userId: string, color: MemberColor | null): Promise<void> {
@@ -262,12 +284,7 @@ export class GroupService {
     const [group] = await this.#db.select().from(groups).where(eq(groups.id, groupId));
     if (!group || group.deletedAt) throw new GroupNotFoundError();
 
-    const [membership] = await this.#db
-      .select({ role: groupMembers.role })
-      .from(groupMembers)
-      .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, requesterId), isNull(groupMembers.removedAt)));
-    if (!membership) throw new NotGroupMemberError();
-    if (membership.role !== "owner") throw new NotGroupOwnerError();
+    await this.#requireOwner(groupId, requesterId);
 
     const balances = await computeGroupBalances(this.#db, groupId);
     for (const balance of balances.values()) {

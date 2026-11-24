@@ -25,17 +25,22 @@ export async function checkAndRecordRateLimit(
   opts: RateLimitOptions,
 ): Promise<RateLimitResult> {
   const windowStart = new Date(Date.now() - opts.windowSeconds * 1000);
-  const [row] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(rateLimitEvents)
-    .where(and(eq(rateLimitEvents.scope, scope), eq(rateLimitEvents.key, key), gte(rateLimitEvents.createdAt, windowStart)));
-  const count = row?.count ?? 0;
+  // Count and insert under a per-key lock: otherwise a burst of concurrent
+  // requests all read the same count and slip past the limit together.
+  const count = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`${scope}:${key}`}, 0))`);
+    const [row] = await tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(rateLimitEvents)
+      .where(and(eq(rateLimitEvents.scope, scope), eq(rateLimitEvents.key, key), gte(rateLimitEvents.createdAt, windowStart)));
+    const current = row?.count ?? 0;
+    if (current < opts.maxEvents) await tx.insert(rateLimitEvents).values({ scope, key });
+    return current;
+  });
 
   if (count >= opts.maxEvents) {
     return { allowed: false, remaining: 0 };
   }
-
-  await db.insert(rateLimitEvents).values({ scope, key });
 
   // Opportunistic cleanup (~1% of calls) instead of a separate cron job:
   // keeps the table from growing unbounded without adding an operational

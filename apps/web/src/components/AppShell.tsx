@@ -29,9 +29,6 @@ export function AppShell({ children }: { children: ReactNode }) {
             </button>
           </div>
         </div>
-        {user && !user.emailVerified && (
-          <div className="bg-gold/20 text-paper text-sm px-5 py-2 text-center">Verify your email to unlock full account features.</div>
-        )}
       </header>
       <main className="max-w-2xl mx-auto px-5 py-8">{children}</main>
     </div>

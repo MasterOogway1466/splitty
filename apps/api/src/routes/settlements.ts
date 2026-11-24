@@ -5,7 +5,8 @@ import { checkAndRecordRateLimit } from "../auth/rateLimit.js";
 import { settlements } from "../db/schema.js";
 import { NotExpenseParticipantError } from "../groups/errors.js";
 import { createSettlement } from "../ledger/settlements.js";
-import { authenticate } from "../plugins/authenticate.js";
+import { requireConnected } from "../ledger/relationships.js";
+import { authenticateVerified } from "../plugins/authenticate.js";
 import { serializeSettlement } from "./serializers.js";
 
 const SETTLEMENT_CREATE_CAP = { windowSeconds: 24 * 60 * 60, maxEvents: 200 };
@@ -16,7 +17,7 @@ const SETTLEMENT_CREATE_CAP = { windowSeconds: 24 * 60 * 60, maxEvents: 200 };
 export async function registerSettlementRoutes(app: FastifyInstance): Promise<void> {
   const { db } = app;
 
-  app.addHook("preHandler", (request, reply) => authenticate(app, request, reply));
+  app.addHook("preHandler", (request, reply) => authenticateVerified(app, request, reply));
 
   app.get("/", async (request) => {
     const userId = request.currentUser!.id;
@@ -43,6 +44,7 @@ export async function registerSettlementRoutes(app: FastifyInstance): Promise<vo
     if (userId !== body.fromUserId && userId !== body.toUserId) {
       throw new NotExpenseParticipantError();
     }
+    await requireConnected(db, userId, [body.fromUserId, body.toUserId]);
 
     const { id } = await createSettlement(db, {
       groupId: null,

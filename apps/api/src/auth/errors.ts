@@ -26,6 +26,12 @@ export class AccountSuspendedError extends AuthError {
   }
 }
 
+export class EmailNotVerifiedError extends AuthError {
+  constructor() {
+    super("Verify your email address to continue", "email_not_verified");
+  }
+}
+
 export class EmailAlreadyRegisteredError extends AuthError {
   constructor() {
     super("Email is already registered", "email_already_registered");

@@ -1,9 +1,10 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { UpdateProfileRequest, UserProfile } from "@splitty/shared";
 import type { Database } from "../db/client.js";
 import { emailTokens, refreshTokens, users } from "../db/schema.js";
 import type { Env } from "../env.js";
 import type { Mailer } from "../mail/mailer.js";
+import { sendClaimEmail } from "../invites/send.js";
 import { sendCappedEmail } from "../mail/capped.js";
 import { getLockoutState, recordFailedLogin, resetLockout } from "./lockout.js";
 import { hashPassword, verifyPassword } from "./passwords.js";
@@ -73,7 +74,7 @@ export class AuthService {
     await sendCappedEmail(this.#db, this.#mailer, userId, {
       to: email,
       subject: "Verify your email",
-      text: `Welcome to Splitty! Verify your email:\n\n${link}\n\nThis link expires in 24 hours.`,
+      text: `Welcome to Splitty! Verify your email:\n\n${link}\n\nThis link expires in 24 hours. If you didn't sign up for Splitty, ignore this email.`,
     });
   }
 
@@ -92,12 +93,23 @@ export class AuthService {
         })
         .returning();
     } catch (err) {
-      if (isUniqueViolation(err)) throw new EmailAlreadyRegisteredError();
-      throw err;
+      if (!isUniqueViolation(err)) throw err;
+      const [existing] = await this.#db.select().from(users).where(eq(users.email, input.email));
+      if (existing?.status !== "invited") throw new EmailAlreadyRegisteredError();
+      // An invited placeholder: whoever is signing up hasn't proven they
+      // own the address, so the password they typed is discarded and the
+      // account can only be claimed through the emailed link.
+      await sendClaimEmail(this.#db, this.#mailer, this.#env, { id: existing.id, email: input.email });
+      return { user: existing };
     }
     if (!inserted) throw new Error("Insert returned no row");
     await this.#sendVerificationEmail(inserted.id, input.email);
     return { user: inserted };
+  }
+
+  async resendVerification(user: UserRow): Promise<void> {
+    if (user.emailVerifiedAt || !user.email) return;
+    await this.#sendVerificationEmail(user.id, user.email);
   }
 
   async verifyEmail(rawToken: string): Promise<void> {
@@ -182,6 +194,10 @@ export class AuthService {
       // enumeration this endpoint must not leak.
       return;
     }
+    if (user.status === "invited") {
+      await sendClaimEmail(this.#db, this.#mailer, this.#env, { id: user.id, email: user.email });
+      return;
+    }
     const rawToken = generateOpaqueToken();
     await this.#db.insert(emailTokens).values({
       userId: user.id,
@@ -210,7 +226,12 @@ export class AuthService {
     const passwordHash = await hashPassword(newPassword);
     await this.#db.transaction(async (tx) => {
       await tx.update(emailTokens).set({ usedAt: new Date() }).where(eq(emailTokens.id, tokenRow.id));
-      await tx.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, tokenRow.userId));
+      // Following the emailed link proves ownership of the address, so it
+      // verifies the account too.
+      await tx
+        .update(users)
+        .set({ passwordHash, emailVerifiedAt: sql`coalesce(${users.emailVerifiedAt}, now())`, updatedAt: new Date() })
+        .where(eq(users.id, tokenRow.userId));
       // A password reset invalidates every existing session — whatever
       // motivated the reset, nothing should still be logged in on the
       // old password afterward.

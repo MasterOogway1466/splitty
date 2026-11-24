@@ -63,6 +63,15 @@ export async function createVerifiedUser(
   return { userId, accessToken };
 }
 
+/** Puts two users in a shared group, so they may record direct entries
+ * with each other. */
+export async function connectUsers(ctx: TestContext, owner: { accessToken: string }, otherEmail: string): Promise<void> {
+  const headers = authHeader(owner.accessToken);
+  const group = await ctx.app.inject({ method: "POST", url: "/api/groups", headers, payload: { name: "Connected", defaultCurrency: "USD" } });
+  const res = await ctx.app.inject({ method: "POST", url: `/api/groups/${group.json().id}/members`, headers, payload: { email: otherEmail } });
+  if (res.statusCode !== 204) throw new Error(`Connect failed: ${res.body}`);
+}
+
 export function authHeader(accessToken: string): { authorization: string } {
   return { authorization: `Bearer ${accessToken}` };
 }

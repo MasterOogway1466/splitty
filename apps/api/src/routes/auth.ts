@@ -100,6 +100,19 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     return { message: "password updated" };
   });
 
+  app.post(
+    "/resend-verification",
+    { preHandler: (request, reply) => authenticate(app, request, reply) },
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const rl = await checkAndRecordRateLimit(db, "resend_verification", user.id, { windowSeconds: 3600, maxEvents: 3 });
+      if (!rl.allowed) throw new RateLimitedError(3600);
+
+      await authService.resendVerification(user);
+      return reply.status(204).send();
+    },
+  );
+
   app.get(
     "/me",
     { preHandler: (request, reply) => authenticate(app, request, reply) },

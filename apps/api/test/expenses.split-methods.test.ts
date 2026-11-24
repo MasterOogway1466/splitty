@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { authHeader, createTestContext, createVerifiedUser, truncateAllTestTables, type TestContext } from "./setup.js";
+import { authHeader, connectUsers, createTestContext, createVerifiedUser, truncateAllTestTables, type TestContext } from "./setup.js";
 
 describe("expense split methods and multi-payer (Phase 2 sub-project A)", () => {
   let ctx: TestContext;
@@ -296,6 +296,7 @@ describe("expense split methods and multi-payer (Phase 2 sub-project A)", () => 
   it("supports a non-equal split on a direct (non-group) expense", async () => {
     const alice = await createVerifiedUser(ctx, { email: "directexact-alice@example.com", password: "password123", displayName: "Alice" });
     const bob = await createVerifiedUser(ctx, { email: "directexact-bob@example.com", password: "password123", displayName: "Bob" });
+    await connectUsers(ctx, alice, "directexact-bob@example.com");
     const res = await ctx.app.inject({
       method: "POST",
       url: "/api/expenses",

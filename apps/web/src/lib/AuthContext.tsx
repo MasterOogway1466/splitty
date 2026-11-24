@@ -15,6 +15,8 @@ interface AuthContextValue {
   /** Reflects a profile update (PATCH /auth/me) into the current
    * session without a token change or re-login. */
   updateUser: (user: UserProfile) => void;
+  /** Re-reads the profile, e.g. after verifying in another tab. */
+  refreshUser: () => Promise<UserProfile>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -67,8 +69,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(updatedUser);
   }
 
+  async function refreshUser() {
+    const profile = (await apiGet("/auth/me")) as UserProfile;
+    setUser(profile);
+    return profile;
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, signup, logout, setSession, updateUser }}>{children}</AuthContext.Provider>
+    <AuthContext.Provider value={{ user, loading, login, signup, logout, setSession, updateUser, refreshUser }}>{children}</AuthContext.Provider>
   );
 }
 

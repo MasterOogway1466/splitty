@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import type { InviteInfo } from "@splitty/shared";
 import { hashPassword } from "../auth/passwords.js";
 import { hashOpaqueToken, issueRefreshToken, signAccessToken } from "../auth/tokens.js";
@@ -56,11 +56,18 @@ export class InviteService {
     const passwordHash = await hashPassword(input.password);
     const now = new Date();
     await this.#db.transaction(async (tx) => {
-      await tx
+      // Conditional on still being a placeholder: several links can be
+      // outstanding, and only the first may claim the account.
+      const claimed = await tx
         .update(users)
         .set({ displayName: input.displayName, passwordHash, status: "active", emailVerifiedAt: now, updatedAt: now })
-        .where(eq(users.id, invite.placeholderUserId));
-      await tx.update(invites).set({ acceptedAt: now }).where(eq(invites.id, invite.id));
+        .where(and(eq(users.id, invite.placeholderUserId), eq(users.status, "invited")))
+        .returning({ id: users.id });
+      if (claimed.length === 0) throw new InvalidOrExpiredTokenError();
+      await tx
+        .update(invites)
+        .set({ acceptedAt: now })
+        .where(and(eq(invites.placeholderUserId, invite.placeholderUserId), isNull(invites.acceptedAt)));
     });
 
     const [user] = await this.#db.select().from(users).where(eq(users.id, invite.placeholderUserId));

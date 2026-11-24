@@ -52,9 +52,15 @@ export class NotExpenseParticipantError extends DomainError {
   }
 }
 
+export class NotConnectedError extends DomainError {
+  constructor() {
+    super("You can only add people you share a group with or have split with before", "not_connected");
+  }
+}
+
 export class NotGroupOwnerError extends DomainError {
   constructor() {
-    super("Only this group's owner can delete it", "not_group_owner");
+    super("Only this group's owner can do this", "not_group_owner");
   }
 }
 

@@ -12,7 +12,7 @@ import { activityFeed, expenses, settlements, users } from "../db/schema.js";
 import { NotGroupMemberError } from "../groups/errors.js";
 import { createExpense, participantUserIdsOf } from "../ledger/expenses.js";
 import { createSettlement } from "../ledger/settlements.js";
-import { authenticate } from "../plugins/authenticate.js";
+import { authenticateVerified } from "../plugins/authenticate.js";
 import { serializeExpense, serializeSettlement } from "./serializers.js";
 
 // docs/PLAN-PUBLIC.md §5 Phase 0 requirement, actually applicable from
@@ -20,13 +20,14 @@ import { serializeExpense, serializeSettlement } from "./serializers.js";
 // per-account cap on resource creation, bounding abuse and keeping load
 // predictable. Generous enough that real usage never brushes up against it.
 const GROUP_CREATE_CAP = { windowSeconds: 24 * 60 * 60, maxEvents: 20 };
+const MEMBER_ADD_CAP = { windowSeconds: 24 * 60 * 60, maxEvents: 100 };
 const EXPENSE_CREATE_CAP = { windowSeconds: 24 * 60 * 60, maxEvents: 200 };
 const SETTLEMENT_CREATE_CAP = { windowSeconds: 24 * 60 * 60, maxEvents: 200 };
 
 export async function registerGroupRoutes(app: FastifyInstance): Promise<void> {
   const { db, groupService } = app;
 
-  app.addHook("preHandler", (request, reply) => authenticate(app, request, reply));
+  app.addHook("preHandler", (request, reply) => authenticateVerified(app, request, reply));
 
   app.post("/", async (request, reply) => {
     const rl = await checkAndRecordRateLimit(db, "group_create", request.currentUser!.id, GROUP_CREATE_CAP);
@@ -49,6 +50,9 @@ export async function registerGroupRoutes(app: FastifyInstance): Promise<void> {
 
   app.post("/:groupId/members", async (request, reply) => {
     const { groupId } = request.params as { groupId: string };
+    const rl = await checkAndRecordRateLimit(db, "member_add", request.currentUser!.id, MEMBER_ADD_CAP);
+    if (!rl.allowed) return reply.status(429).send({ error: "rate_limited", message: "Too many members added today" });
+
     const body = addGroupMemberRequestSchema.parse(request.body);
     await groupService.addMember(groupId, body.email, request.currentUser!.id);
     reply.status(204).send();
