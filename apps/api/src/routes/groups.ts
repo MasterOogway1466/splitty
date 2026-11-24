@@ -100,6 +100,7 @@ export async function registerGroupRoutes(app: FastifyInstance): Promise<void> {
     if (!rl.allowed) return reply.status(429).send({ error: "rate_limited", message: "Too many expenses created today" });
 
     const body = createExpenseRequestSchema.parse(request.body);
+    await groupService.requireGroupCurrency(groupId, body.currency);
     // Every payer and participant must actually be a current member of
     // this group — the isolation boundary applies to who an expense can
     // involve, not just who can create one.
@@ -147,6 +148,7 @@ export async function registerGroupRoutes(app: FastifyInstance): Promise<void> {
     if (!rl.allowed) return reply.status(429).send({ error: "rate_limited", message: "Too many settlements recorded today" });
 
     const body = createSettlementRequestSchema.parse(request.body);
+    await groupService.requireGroupCurrency(groupId, body.currency);
     for (const memberId of [body.fromUserId, body.toUserId]) {
       if (!(await groupService.isMember(groupId, memberId))) {
         throw new NotGroupMemberError();

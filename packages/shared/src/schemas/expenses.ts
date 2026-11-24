@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CURRENCY_CODES } from "../currency.js";
 
 const payerSchema = z.object({ userId: z.string().uuid(), amountMinor: z.number().int().positive() });
 
@@ -40,7 +41,7 @@ export const createExpenseRequestSchema = z
     description: z.string().trim().min(1).max(200),
     notes: z.string().trim().max(2000).optional(),
     amountMinor: z.number().int().positive(),
-    currency: z.string().length(3),
+    currency: z.enum(CURRENCY_CODES),
     categoryId: z.string().uuid().nullable().optional(),
     expenseDate: z.string().datetime().optional(), // defaults to now if omitted
     payers: z.array(payerSchema).min(1),

@@ -1,4 +1,5 @@
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq, exists, inArray, isNull, or, sql } from "drizzle-orm";
+import { attributeDebts } from "@splitty/shared";
 import type { Database } from "../db/client.js";
 import { expenseParticipants, expensePayers, expenses, settlements } from "../db/schema.js";
 
@@ -68,52 +69,73 @@ export async function computeGroupBalances(db: Database, groupId: string): Promi
  * aggregated across multiple groups plus non-group expenses." Positive
  * entries mean `otherUserId` owes `userId`; negative means the reverse.
  *
- * Phase 1 is single-payer-only, so the attribution rule is unambiguous:
- * for an expense paid by P with non-payer participant Q, Q owes P exactly
- * their own participant share — no proportional splitting needed since
- * there's only ever one payer to attribute to.
+ * Expenses are attributed through `attributeDebts` (§7), so a person's
+ * pairwise balances always sum to their global balance.
  */
 export async function computePairwiseBalances(db: Database, userId: string, otherUserId: string): Promise<CurrencyBalanceMap> {
-  const net: CurrencyBalanceMap = new Map();
-  const add = (currency: string, delta: number) => net.set(currency, (net.get(currency) ?? 0) + delta);
+  return (await computeAllPairwiseBalances(db, userId)).get(otherUserId) ?? new Map();
+}
 
-  // Expenses userId paid where otherUserId is a participant: otherUserId owes userId.
-  const paidByUser = await db
-    .select({ currency: expenses.currency, owedAmountMinor: expenseParticipants.owedAmountMinor })
-    .from(expensePayers)
-    .innerJoin(expenses, eq(expensePayers.expenseId, expenses.id))
-    .innerJoin(expenseParticipants, and(eq(expenseParticipants.expenseId, expenses.id), eq(expenseParticipants.userId, otherUserId)))
-    .where(and(eq(expensePayers.userId, userId), isNull(expenses.deletedAt)));
-  for (const row of paidByUser) add(row.currency, row.owedAmountMinor);
+/** computePairwiseBalances against every counterparty at once, keyed by
+ * their user id. */
+export async function computeAllPairwiseBalances(db: Database, userId: string): Promise<Map<string, CurrencyBalanceMap>> {
+  const result = new Map<string, CurrencyBalanceMap>();
+  const add = (otherUserId: string, currency: string, delta: number) => {
+    const net = result.get(otherUserId) ?? new Map<string, number>();
+    net.set(currency, (net.get(currency) ?? 0) + delta);
+    result.set(otherUserId, net);
+  };
 
-  // Expenses otherUserId paid where userId is a participant: userId owes otherUserId.
-  const paidByOther = await db
-    .select({ currency: expenses.currency, owedAmountMinor: expenseParticipants.owedAmountMinor })
-    .from(expensePayers)
-    .innerJoin(expenses, eq(expensePayers.expenseId, expenses.id))
-    .innerJoin(expenseParticipants, and(eq(expenseParticipants.expenseId, expenses.id), eq(expenseParticipants.userId, userId)))
-    .where(and(eq(expensePayers.userId, otherUserId), isNull(expenses.deletedAt)));
-  for (const row of paidByOther) add(row.currency, -row.owedAmountMinor);
-
-  const settlementRows = await db
-    .select({ currency: settlements.currency, amountMinor: settlements.amountMinor, fromUserId: settlements.fromUserId })
-    .from(settlements)
-    .where(
-      and(
-        isNull(settlements.deletedAt),
-        or(
-          and(eq(settlements.fromUserId, userId), eq(settlements.toUserId, otherUserId)),
-          and(eq(settlements.fromUserId, otherUserId), eq(settlements.toUserId, userId)),
-        ),
+  // Attribution needs every payer and participant of an expense, not just
+  // the two people being compared.
+  const involvesUser = and(
+    isNull(expenses.deletedAt),
+    or(
+      exists(db.select({ one: sql`1` }).from(expensePayers).where(and(eq(expensePayers.expenseId, expenses.id), eq(expensePayers.userId, userId)))),
+      exists(
+        db
+          .select({ one: sql`1` })
+          .from(expenseParticipants)
+          .where(and(eq(expenseParticipants.expenseId, expenses.id), eq(expenseParticipants.userId, userId))),
       ),
-    );
-  for (const row of settlementRows) {
-    // userId paid otherUserId -> otherUserId's debt to userId shrinks, i.e.
-    // net(otherUserId owes userId) goes up (toward less negative / more positive).
-    add(row.currency, row.fromUserId === userId ? row.amountMinor : -row.amountMinor);
+    ),
+  );
+  const myExpenses = await db.select({ id: expenses.id, currency: expenses.currency }).from(expenses).where(involvesUser);
+
+  if (myExpenses.length > 0) {
+    const expenseIds = myExpenses.map((e) => e.id);
+    const netsByExpense = new Map(expenseIds.map((id) => [id, new Map<string, number>()]));
+    const addNet = (expenseId: string, memberId: string, delta: number) => {
+      const nets = netsByExpense.get(expenseId)!;
+      nets.set(memberId, (nets.get(memberId) ?? 0) + delta);
+    };
+    const paidRows = await db.select().from(expensePayers).where(inArray(expensePayers.expenseId, expenseIds));
+    for (const row of paidRows) addNet(row.expenseId, row.userId, row.amountMinor);
+    const owedRows = await db.select().from(expenseParticipants).where(inArray(expenseParticipants.expenseId, expenseIds));
+    for (const row of owedRows) addNet(row.expenseId, row.userId, -row.owedAmountMinor);
+
+    for (const expense of myExpenses) {
+      for (const debt of attributeDebts(netsByExpense.get(expense.id)!)) {
+        if (debt.toId === userId) add(debt.fromId, expense.currency, debt.amountMinor);
+        else if (debt.fromId === userId) add(debt.toId, expense.currency, -debt.amountMinor);
+      }
+    }
   }
 
-  return net;
+  const settlementRows = await db
+    .select()
+    .from(settlements)
+    .where(and(isNull(settlements.deletedAt), or(eq(settlements.fromUserId, userId), eq(settlements.toUserId, userId))));
+  for (const row of settlementRows) {
+    // A self-settlement moves nothing between two people.
+    if (row.fromUserId === row.toUserId) continue;
+    // userId paid the other -> the other's net debt to userId goes up
+    // (toward less negative / more positive).
+    if (row.fromUserId === userId) add(row.toUserId, row.currency, row.amountMinor);
+    else add(row.fromUserId, row.currency, -row.amountMinor);
+  }
+
+  return result;
 }
 
 /** Global net position for one user across every group and direct expense
@@ -138,10 +160,13 @@ export async function computeGlobalBalances(db: Database, userId: string): Promi
   for (const row of owedRows) add(row.currency, -row.owedAmountMinor);
 
   const settlementRows = await db
-    .select({ currency: settlements.currency, amountMinor: settlements.amountMinor, fromUserId: settlements.fromUserId })
+    .select({ currency: settlements.currency, amountMinor: settlements.amountMinor, fromUserId: settlements.fromUserId, toUserId: settlements.toUserId })
     .from(settlements)
     .where(and(isNull(settlements.deletedAt), or(eq(settlements.fromUserId, userId), eq(settlements.toUserId, userId))));
-  for (const row of settlementRows) add(row.currency, row.fromUserId === userId ? row.amountMinor : -row.amountMinor);
+  for (const row of settlementRows) {
+    if (row.fromUserId === row.toUserId) continue;
+    add(row.currency, row.fromUserId === userId ? row.amountMinor : -row.amountMinor);
+  }
 
   return net;
 }

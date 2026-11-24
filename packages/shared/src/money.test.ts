@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { splitByLargestRemainder, sumMinor } from "./money.js";
+import { attributeDebts, splitByLargestRemainder, sumMinor } from "./money.js";
 
 describe("splitByLargestRemainder", () => {
   it("always sums exactly to the total (equal split, not evenly divisible)", () => {
@@ -70,5 +70,36 @@ describe("splitByLargestRemainder", () => {
         { id: "a", weight: 1 },
       ]),
     ).toThrow();
+  });
+});
+
+describe("attributeDebts", () => {
+  it("matches every member's net exactly on both sides across random inputs", () => {
+    for (let trial = 0; trial < 500; trial++) {
+      const nets = Array.from({ length: 2 + Math.floor(Math.random() * 7) }, () => Math.floor(Math.random() * 200) - 100);
+      nets.push(-sumMinor(nets));
+      const netById = new Map(nets.map((net, i) => [`p${i}`, net]));
+      const result = new Map(nets.map((_, i) => [`p${i}`, 0]));
+      for (const debt of attributeDebts(netById)) {
+        expect(debt.amountMinor).toBeGreaterThan(0);
+        result.set(debt.fromId, result.get(debt.fromId)! - debt.amountMinor);
+        result.set(debt.toId, result.get(debt.toId)! + debt.amountMinor);
+      }
+      expect([...result.values()]).toEqual(nets.map((n) => n + 0));
+    }
+  });
+
+  it("does not depend on input order", () => {
+    const entries: [string, number][] = [["d", -5], ["c", -6], ["b", 4], ["a", 7]];
+    expect(attributeDebts(new Map(entries))).toEqual(attributeDebts(new Map([...entries].reverse())));
+  });
+
+  it("stays exact when products exceed 2^53", () => {
+    const debts = attributeDebts(new Map([["a", 4_000_000_000_001], ["b", 3_000_000_000_002], ["c", -7_000_000_000_003]]));
+    expect(debts.map((d) => d.amountMinor)).toEqual([4_000_000_000_001, 3_000_000_000_002]);
+  });
+
+  it("rejects nets that do not sum to zero", () => {
+    expect(() => attributeDebts(new Map([["a", 1]]))).toThrow();
   });
 });

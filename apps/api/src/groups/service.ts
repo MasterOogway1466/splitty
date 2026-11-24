@@ -9,6 +9,7 @@ import type { Mailer } from "../mail/mailer.js";
 import { computeGroupBalances } from "../ledger/balances.js";
 import {
   AlreadyMemberError,
+  CurrencyMismatchError,
   DomainError,
   GroupNotFoundError,
   GroupNotSettledError,
@@ -66,6 +67,12 @@ export class GroupService {
       .from(groupMembers)
       .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, userId), isNull(groupMembers.removedAt)));
     return !!row;
+  }
+
+  async requireGroupCurrency(groupId: string, currency: string): Promise<void> {
+    const [group] = await this.#db.select({ defaultCurrency: groups.defaultCurrency }).from(groups).where(eq(groups.id, groupId));
+    if (!group) throw new GroupNotFoundError();
+    if (group.defaultCurrency !== currency) throw new CurrencyMismatchError(group.defaultCurrency);
   }
 
   async listMyGroups(userId: string): Promise<GroupSummary[]> {

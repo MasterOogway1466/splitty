@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { formatDate, formatMoney, memberColorValues, type CreateExpenseRequest, type Expense, type MemberColor } from "@splitty/shared";
+import { formatDate, formatMoney, formatMoneyInput, memberColorValues, moneyInputStep, parseMoneyInput, type CreateExpenseRequest, type Expense, type MemberColor } from "@splitty/shared";
 import { AppShell } from "../components/AppShell.js";
 import { ApiError } from "../lib/api.js";
 import { useAuth } from "../lib/AuthContext.js";
@@ -45,10 +45,6 @@ const SPLIT_METHOD_LABELS: Record<SplitMethodChoice, string> = {
   shares: "Shares",
   adjustment: "+/−",
 };
-
-function toMinor(dollars: string): number {
-  return Math.round(Number(dollars) * 100);
-}
 
 export function GroupDetailPage() {
   const { groupId } = useParams<{ groupId: string }>();
@@ -103,6 +99,15 @@ export function GroupDetailPage() {
   }
   const group = groupQuery.data;
   const currency = group.defaultCurrency;
+  const moneyStep = moneyInputStep(currency);
+
+  function toMinor(value: string): number {
+    return parseMoneyInput(value, currency);
+  }
+  // For running totals only: an incomplete field counts as zero.
+  function toMinorOrZero(value: string): number {
+    return toMinor(value) || 0;
+  }
 
   function nameFor(m: { userId: string; displayName: string; color?: MemberColor | null }) {
     const tags = [m.userId === user?.id ? "you" : null, m.color ?? null].filter((t): t is string => t !== null);
@@ -145,7 +150,7 @@ export function GroupDetailPage() {
   async function handleAddExpense(e: FormEvent) {
     e.preventDefault();
     setExpenseError(null);
-    const amountMinor = Math.round(Number(expenseAmount) * 100);
+    const amountMinor = toMinor(expenseAmount);
     if (!Number.isFinite(amountMinor) || amountMinor <= 0) {
       setExpenseError("Enter a valid amount");
       return;
@@ -209,6 +214,10 @@ export function GroupDetailPage() {
       payload = { ...base, splitMethod: "shares", participants: parts };
     } else {
       const parts = participantIds.map((userId) => ({ userId, adjustmentMinor: toMinor(participantValues[userId] || "0") }));
+      if (parts.some((p) => !Number.isFinite(p.adjustmentMinor))) {
+        setExpenseError("Enter a valid adjustment for each participant");
+        return;
+      }
       payload = { ...base, splitMethod: "adjustment", participants: parts };
     }
 
@@ -226,7 +235,7 @@ export function GroupDetailPage() {
     setShowAddExpense(true);
     setExpenseError(null);
     setExpenseDescription(expense.description);
-    setExpenseAmount((expense.amountMinor / 100).toFixed(2));
+    setExpenseAmount(formatMoneyInput(expense.amountMinor, currency));
 
     // A payer/participant who has since left the group can't be
     // resubmitted (the server would 404 them as a non-member) — drop
@@ -253,21 +262,21 @@ export function GroupDetailPage() {
       setParticipants(new Set(nonZero.map((p) => p.userId)));
       const values: Record<string, string> = {};
       for (const p of nonZero) {
-        values[p.userId] = (p.owedAmountMinor / 100).toFixed(2);
+        values[p.userId] = formatMoneyInput(p.owedAmountMinor, currency);
       }
       setParticipantValues(values);
     }
 
     setPayerRows(
       currentPayers.length > 0
-        ? currentPayers.map((p) => ({ userId: p.userId, amount: (p.amountMinor / 100).toFixed(2) }))
+        ? currentPayers.map((p) => ({ userId: p.userId, amount: formatMoneyInput(p.amountMinor, currency) }))
         : [{ userId: user?.id ?? "", amount: "" }],
     );
   }
 
   async function handleSettle(e: FormEvent) {
     e.preventDefault();
-    const amountMinor = Math.round(Number(settleAmount) * 100);
+    const amountMinor = toMinor(settleAmount);
     if (!Number.isFinite(amountMinor) || amountMinor <= 0) return;
     await createSettlement.mutateAsync({ fromUserId: settleFrom, toUserId: settleTo, amountMinor, currency, method: "other" });
     setSettleAmount("");
@@ -447,8 +456,8 @@ export function GroupDetailPage() {
             </div>
             <input
               type="number"
-              step="0.01"
-              min="0.01"
+              step={moneyStep}
+              min={moneyStep}
               value={settleAmount}
               onChange={(e) => setSettleAmount(e.target.value)}
               placeholder={`Amount (${currency})`}
@@ -472,8 +481,8 @@ export function GroupDetailPage() {
             />
             <input
               type="number"
-              step="0.01"
-              min="0.01"
+              step={moneyStep}
+              min={moneyStep}
               value={expenseAmount}
               onChange={(e) => setExpenseAmount(e.target.value)}
               placeholder={`Amount (${currency})`}
@@ -518,7 +527,7 @@ export function GroupDetailPage() {
                       </select>
                       <input
                         type="number"
-                        step="0.01"
+                        step={moneyStep}
                         min="0"
                         value={row.amount}
                         onChange={(e) => updatePayerRow(i, { amount: e.target.value })}
@@ -540,14 +549,14 @@ export function GroupDetailPage() {
                     )}
                     <span
                       className={`figure ${(() => {
-                        const total = payerRows.reduce((s, r) => s + toMinor(r.amount || "0"), 0);
-                        const target = Math.round(Number(expenseAmount || "0") * 100);
+                        const total = payerRows.reduce((s, r) => s + toMinorOrZero(r.amount), 0);
+                        const target = toMinorOrZero(expenseAmount);
                         return total === target ? "text-ledger" : "text-rust";
                       })()}`}
                     >
                       {(() => {
-                        const total = payerRows.reduce((s, r) => s + toMinor(r.amount || "0"), 0);
-                        const target = Math.round(Number(expenseAmount || "0") * 100);
+                        const total = payerRows.reduce((s, r) => s + toMinorOrZero(r.amount), 0);
+                        const target = toMinorOrZero(expenseAmount);
                         return `${formatMoney(total, currency)} of ${formatMoney(target, currency)} assigned`;
                       })()}
                     </span>
@@ -579,10 +588,10 @@ export function GroupDetailPage() {
                     {splitMethod !== "equal" && participants.has(m.userId) && (
                       <input
                         type="number"
-                        step="0.01"
+                        step={splitMethod === "exact" || splitMethod === "adjustment" ? moneyStep : "0.01"}
                         value={participantValues[m.userId] ?? ""}
                         onChange={(e) => setParticipantValues((prev) => ({ ...prev, [m.userId]: e.target.value }))}
-                        placeholder={splitMethod === "percentage" ? "%" : splitMethod === "shares" ? "shares" : splitMethod === "adjustment" ? "+/−" : "$"}
+                        placeholder={splitMethod === "percentage" ? "%" : splitMethod === "shares" ? "shares" : splitMethod === "adjustment" ? "+/−" : currency}
                         className="w-24 rounded-md border border-line px-2 py-1 text-xs text-ink focus:outline-none focus:ring-2 focus:ring-ledger/40"
                       />
                     )}
@@ -593,8 +602,8 @@ export function GroupDetailPage() {
                 <p className="mt-1 text-xs figure text-ink-muted">
                   {splitMethod === "exact"
                     ? (() => {
-                        const total = [...participants].reduce((s, id) => s + toMinor(participantValues[id] || "0"), 0);
-                        const target = Math.round(Number(expenseAmount || "0") * 100);
+                        const total = [...participants].reduce((s, id) => s + toMinorOrZero(participantValues[id] ?? ""), 0);
+                        const target = toMinorOrZero(expenseAmount);
                         return `${formatMoney(total, currency)} of ${formatMoney(target, currency)} assigned`;
                       })()
                     : (() => {

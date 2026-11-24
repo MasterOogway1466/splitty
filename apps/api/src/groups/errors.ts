@@ -38,6 +38,14 @@ export class NonzeroBalanceError extends DomainError {
   }
 }
 
+/** Group balances are a single-currency sum until real FX lands
+ * (docs/PLAN-PUBLIC.md §10), so a group's entries must use its currency. */
+export class CurrencyMismatchError extends DomainError {
+  constructor(expected: string) {
+    super(`This group only accepts entries in ${expected}`, "currency_mismatch");
+  }
+}
+
 export class NotExpenseParticipantError extends DomainError {
   constructor() {
     super("Not a participant in this expense", "not_expense_participant");
