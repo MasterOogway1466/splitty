@@ -146,7 +146,7 @@ export class AuthService {
       return verified;
     });
     const accessToken = signAccessToken(user, this.#env.JWT_SECRET, this.#env.ACCESS_TOKEN_TTL_MINUTES);
-    const refreshTokenRaw = await issueRefreshToken(this.#db, user.id, this.#env.REFRESH_TOKEN_TTL_DAYS);
+    const refreshTokenRaw = await issueRefreshToken(this.#db, user, this.#env.REFRESH_TOKEN_TTL_DAYS);
     return { user, accessToken, refreshTokenRaw };
   }
 
@@ -178,7 +178,7 @@ export class AuthService {
     await resetLockout(this.#db, user.id);
 
     const accessToken = signAccessToken(user, this.#env.JWT_SECRET, this.#env.ACCESS_TOKEN_TTL_MINUTES);
-    const refreshTokenRaw = await issueRefreshToken(this.#db, user.id, this.#env.REFRESH_TOKEN_TTL_DAYS);
+    const refreshTokenRaw = await issueRefreshToken(this.#db, user, this.#env.REFRESH_TOKEN_TTL_DAYS);
     return { user, accessToken, refreshTokenRaw };
   }
 
@@ -197,9 +197,17 @@ export class AuthService {
     // Rotation: the presented token is single-use. Revoking it here means
     // a stolen-and-replayed refresh token stops working the moment the
     // legitimate client refreshes again.
-    await this.#db.update(refreshTokens).set({ revokedAt: new Date() }).where(eq(refreshTokens.id, tokenRow.id));
-
-    const refreshTokenRaw = await issueRefreshToken(this.#db, user.id, this.#env.REFRESH_TOKEN_TTL_DAYS);
+    // One transaction, in the same user-then-token lock order as a reset.
+    const refreshTokenRaw = await this.#db.transaction(async (tx) => {
+      const next = await issueRefreshToken(tx, user, this.#env.REFRESH_TOKEN_TTL_DAYS);
+      const revoked = await tx
+        .update(refreshTokens)
+        .set({ revokedAt: new Date() })
+        .where(and(eq(refreshTokens.id, tokenRow.id), isNull(refreshTokens.revokedAt)))
+        .returning({ id: refreshTokens.id });
+      if (revoked.length === 0) throw new InvalidRefreshTokenError();
+      return next;
+    });
     const accessToken = signAccessToken(user, this.#env.JWT_SECRET, this.#env.ACCESS_TOKEN_TTL_MINUTES);
     return { accessToken, refreshTokenRaw };
   }

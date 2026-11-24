@@ -1,3 +1,5 @@
+import { useRef } from "react";
+import { uuidv7 } from "uuidv7";
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import type {
   CreateExpenseRequest,
@@ -15,6 +17,20 @@ import type {
   UserProfile,
 } from "@splitty/shared";
 import { apiDelete, apiGet, apiPatch, apiPost } from "./api.js";
+
+/** Adds a client-generated id to each create request. Retrying identical
+ * content after a failure reuses the id, so if the first attempt did reach
+ * the server it isn't recorded twice; success or an edit starts a new one. */
+function useRetryableCreate<Input extends object, Result>(send: (input: Input) => Promise<Result>) {
+  const pending = useRef<{ content: string; id: string } | null>(null);
+  return async (input: Input): Promise<Result> => {
+    const content = JSON.stringify(input);
+    if (pending.current?.content !== content) pending.current = { content, id: uuidv7() };
+    const result = await send({ ...input, id: pending.current.id });
+    pending.current = null;
+    return result;
+  };
+}
 
 export function useGroups(): UseQueryResult<GroupSummary[]> {
   return useQuery({ queryKey: ["groups"], queryFn: () => apiGet("/groups") as Promise<GroupSummary[]> });
@@ -109,8 +125,9 @@ export function useSetMemberColor(groupId: string) {
 
 export function useCreateGroupExpense(groupId: string) {
   const queryClient = useQueryClient();
+  const create = useRetryableCreate((input: CreateExpenseRequest) => apiPost(`/groups/${groupId}/expenses`, input) as Promise<Expense>);
   return useMutation({
-    mutationFn: (input: CreateExpenseRequest) => apiPost(`/groups/${groupId}/expenses`, input) as Promise<Expense>,
+    mutationFn: (input: CreateExpenseRequest) => create(input),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["groups", groupId] });
       void queryClient.invalidateQueries({ queryKey: ["groups", groupId, "expenses"] });
@@ -120,8 +137,9 @@ export function useCreateGroupExpense(groupId: string) {
 
 export function useCreateGroupSettlement(groupId: string) {
   const queryClient = useQueryClient();
+  const create = useRetryableCreate((input: CreateSettlementRequest) => apiPost(`/groups/${groupId}/settlements`, input) as Promise<Settlement>);
   return useMutation({
-    mutationFn: (input: CreateSettlementRequest) => apiPost(`/groups/${groupId}/settlements`, input) as Promise<Settlement>,
+    mutationFn: (input: CreateSettlementRequest) => create(input),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["groups", groupId] });
       void queryClient.invalidateQueries({ queryKey: ["groups", groupId, "settlements"] });
@@ -131,8 +149,9 @@ export function useCreateGroupSettlement(groupId: string) {
 
 export function useCreateDirectExpense() {
   const queryClient = useQueryClient();
+  const create = useRetryableCreate((input: CreateExpenseRequest) => apiPost("/expenses", input) as Promise<Expense>);
   return useMutation({
-    mutationFn: (input: CreateExpenseRequest) => apiPost("/expenses", input) as Promise<Expense>,
+    mutationFn: (input: CreateExpenseRequest) => create(input),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["balances"] });
     },
@@ -141,8 +160,9 @@ export function useCreateDirectExpense() {
 
 export function useCreateDirectSettlement() {
   const queryClient = useQueryClient();
+  const create = useRetryableCreate((input: CreateSettlementRequest) => apiPost("/settlements", input) as Promise<Settlement>);
   return useMutation({
-    mutationFn: (input: CreateSettlementRequest) => apiPost("/settlements", input) as Promise<Settlement>,
+    mutationFn: (input: CreateSettlementRequest) => create(input),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["balances"] });
     },

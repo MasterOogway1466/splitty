@@ -3,9 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { createSettlementRequestSchema } from "@splitty/shared";
 import { checkAndRecordRateLimit } from "../auth/rateLimit.js";
 import { settlements } from "../db/schema.js";
-import { NotExpenseParticipantError } from "../groups/errors.js";
-import { createSettlement } from "../ledger/settlements.js";
-import { requireSettleable } from "../ledger/relationships.js";
+import { recordSettlement } from "../ledger/record.js";
 import { authenticateVerified } from "../plugins/authenticate.js";
 import { serializeSettlement } from "./serializers.js";
 
@@ -15,7 +13,7 @@ const SETTLEMENT_CREATE_CAP = { windowSeconds: 24 * 60 * 60, maxEvents: 200 };
  * expenses (routes/expenses.ts): no group membership to check, so the
  * requester must be one of the two parties involved. */
 export async function registerSettlementRoutes(app: FastifyInstance): Promise<void> {
-  const { db } = app;
+  const { db, groupService } = app;
 
   app.addHook("preHandler", (request, reply) => authenticateVerified(app, request, reply));
 
@@ -41,24 +39,8 @@ export async function registerSettlementRoutes(app: FastifyInstance): Promise<vo
     if (!rl.allowed) return reply.status(429).send({ error: "rate_limited", message: "Too many settlements recorded today" });
 
     const body = createSettlementRequestSchema.parse(request.body);
-    if (userId !== body.fromUserId && userId !== body.toUserId) {
-      throw new NotExpenseParticipantError();
-    }
-    await requireSettleable(db, userId, body);
-
-    const { id } = await createSettlement(db, {
-      groupId: null,
-      fromUserId: body.fromUserId,
-      toUserId: body.toUserId,
-      amountMinor: body.amountMinor,
-      currency: body.currency,
-      method: body.method,
-      note: body.note ?? null,
-      settledAt: body.settledAt ? new Date(body.settledAt) : new Date(),
-      createdBy: userId,
-    });
-    const [row] = await db.select().from(settlements).where(eq(settlements.id, id));
-    reply.status(201);
-    return serializeSettlement(row!);
+    const { row, created } = await recordSettlement(db, groupService, { groupId: null, userId, body });
+    reply.status(created ? 201 : 200);
+    return serializeSettlement(row);
   });
 }

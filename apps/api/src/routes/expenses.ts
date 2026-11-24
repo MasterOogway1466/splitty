@@ -3,9 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { createExpenseRequestSchema } from "@splitty/shared";
 import { checkAndRecordRateLimit } from "../auth/rateLimit.js";
 import { expenseParticipants, expensePayers, expenses } from "../db/schema.js";
-import { NotExpenseParticipantError } from "../groups/errors.js";
-import { createExpense, participantUserIdsOf } from "../ledger/expenses.js";
-import { requireConnected } from "../ledger/relationships.js";
+import { recordExpense } from "../ledger/record.js";
 import { authenticateVerified } from "../plugins/authenticate.js";
 import { serializeExpense } from "./serializers.js";
 
@@ -16,7 +14,7 @@ const EXPENSE_CREATE_CAP = { windowSeconds: 24 * 60 * 60, maxEvents: 200 };
  * with no group to check membership against, authorization here is
  * "the requester must be a payer or participant," not membership. */
 export async function registerExpenseRoutes(app: FastifyInstance): Promise<void> {
-  const { db } = app;
+  const { db, groupService } = app;
 
   app.addHook("preHandler", (request, reply) => authenticateVerified(app, request, reply));
 
@@ -50,29 +48,8 @@ export async function registerExpenseRoutes(app: FastifyInstance): Promise<void>
     if (!rl.allowed) return reply.status(429).send({ error: "rate_limited", message: "Too many expenses created today" });
 
     const body = createExpenseRequestSchema.parse(request.body);
-    const payerIds = body.payers.map((p) => p.userId);
-    const participantIds = participantUserIdsOf(body);
-    // No group membership to lean on here — the requester has to be one
-    // of the people actually involved in the expense they're recording.
-    if (!payerIds.includes(userId) && !participantIds.includes(userId)) {
-      throw new NotExpenseParticipantError();
-    }
-    await requireConnected(db, userId, [...payerIds, ...participantIds]);
-
-    const { id } = await createExpense(db, {
-      groupId: null,
-      description: body.description,
-      notes: body.notes ?? null,
-      amountMinor: body.amountMinor,
-      currency: body.currency,
-      categoryId: body.categoryId ?? null,
-      expenseDate: body.expenseDate ? new Date(body.expenseDate) : new Date(),
-      payers: body.payers,
-      split: body,
-      createdBy: userId,
-    });
-    const [row] = await db.select().from(expenses).where(eq(expenses.id, id));
-    reply.status(201);
-    return serializeExpense(db, row!);
+    const { row, created } = await recordExpense(db, groupService, { groupId: null, userId, body });
+    reply.status(created ? 201 : 200);
+    return serializeExpense(db, row);
   });
 }

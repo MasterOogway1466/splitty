@@ -74,7 +74,7 @@ export class InviteService {
     if (!user) throw new Error("Placeholder user missing after accept");
 
     const accessToken = signAccessToken(user, this.#env.JWT_SECRET, this.#env.ACCESS_TOKEN_TTL_MINUTES);
-    const refreshTokenRaw = await issueRefreshToken(this.#db, user.id, this.#env.REFRESH_TOKEN_TTL_DAYS);
+    const refreshTokenRaw = await issueRefreshToken(this.#db, user, this.#env.REFRESH_TOKEN_TTL_DAYS);
     return { user, accessToken, refreshTokenRaw };
   }
 }

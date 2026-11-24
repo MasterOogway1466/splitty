@@ -4,6 +4,7 @@ import type { PairwiseBalance } from "@splitty/shared";
 import { friendLinks, users } from "../db/schema.js";
 import { computeAllPairwiseBalances, computeGlobalBalances, computePairwiseBalances } from "../ledger/balances.js";
 import { activeCoMemberIds } from "../ledger/relationships.js";
+import { uuidParam } from "./params.js";
 import { authenticateVerified } from "../plugins/authenticate.js";
 
 export async function registerBalanceRoutes(app: FastifyInstance): Promise<void> {
@@ -56,7 +57,7 @@ export async function registerBalanceRoutes(app: FastifyInstance): Promise<void>
 
   app.get("/:otherUserId", async (request) => {
     const userId = request.currentUser!.id;
-    const { otherUserId } = request.params as { otherUserId: string };
+    const otherUserId = uuidParam(request, "otherUserId");
     const balances = await computePairwiseBalances(db, userId, otherUserId);
     return [...balances.entries()].map(([currency, netMinor]) => ({ currency, netMinor }));
   });

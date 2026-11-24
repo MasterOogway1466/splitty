@@ -59,6 +59,24 @@ describe("splitByLargestRemainder", () => {
     expect(sumMinor(result.values())).toBe(300);
   });
 
+  it("is exact where floating point is not", () => {
+    // 1e12 * 100000 / 100001-style products round in a double.
+    const total = 999_999_999_999;
+    const weights = [99_991, 7, 3];
+    const result = splitByLargestRemainder(total, weights.map((weight, i) => ({ id: `p${i}`, weight })));
+    const totalWeight = BigInt(weights[0]! + weights[1]! + weights[2]!);
+    expect(sumMinor(result.values())).toBe(total);
+    weights.forEach((weight, i) => {
+      const floor = Number((BigInt(total) * BigInt(weight)) / totalWeight);
+      expect([floor, floor + 1]).toContain(result.get(`p${i}`));
+    });
+  });
+
+  it("rejects fractional or negative weights", () => {
+    expect(() => splitByLargestRemainder(100, [{ id: "a", weight: 1.5 }])).toThrow();
+    expect(() => splitByLargestRemainder(100, [{ id: "a", weight: 2 }, { id: "b", weight: -1 }])).toThrow();
+  });
+
   it("rejects a non-integer total", () => {
     expect(() => splitByLargestRemainder(10.5, [{ id: "a", weight: 1 }])).toThrow();
   });

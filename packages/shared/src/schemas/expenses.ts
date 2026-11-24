@@ -1,6 +1,15 @@
 import { z } from "zod";
 import { CURRENCY_CODES } from "../currency.js";
 import { MAX_AMOUNT_MINOR, MAX_SHARES } from "../money.js";
+import { uuidv7Schema } from "./ids.js";
+
+/** Positive, at most two decimals: splits are computed on whole hundredths. */
+const hundredths = (max: number) =>
+  z
+    .number()
+    .positive()
+    .max(max)
+    .refine((v) => Math.round(v * 100) >= 1 && Math.abs(v * 100 - Math.round(v * 100)) < 1e-6, "At most two decimal places");
 
 const MAX_PEOPLE = 500;
 
@@ -16,11 +25,11 @@ const exactSplitSchema = z.object({
 });
 const percentageSplitSchema = z.object({
   splitMethod: z.literal("percentage"),
-  participants: z.array(z.object({ userId: z.string().uuid(), percentage: z.number().positive().max(100) })).min(1).max(MAX_PEOPLE),
+  participants: z.array(z.object({ userId: z.string().uuid(), percentage: hundredths(100) })).min(1).max(MAX_PEOPLE),
 });
 const sharesSplitSchema = z.object({
   splitMethod: z.literal("shares"),
-  participants: z.array(z.object({ userId: z.string().uuid(), shares: z.number().positive().max(MAX_SHARES) })).min(1).max(MAX_PEOPLE),
+  participants: z.array(z.object({ userId: z.string().uuid(), shares: hundredths(MAX_SHARES) })).min(1).max(MAX_PEOPLE),
 });
 const adjustmentSplitSchema = z.object({
   splitMethod: z.literal("adjustment"),
@@ -41,6 +50,7 @@ export type ExpenseSplit = z.infer<typeof splitSchema>;
 
 export const createExpenseRequestSchema = z
   .object({
+    id: uuidv7Schema.optional(),
     description: z.string().trim().min(1).max(200),
     notes: z.string().trim().max(2000).optional(),
     amountMinor: z.number().int().positive().max(MAX_AMOUNT_MINOR),

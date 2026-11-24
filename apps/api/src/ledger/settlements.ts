@@ -1,8 +1,10 @@
 import { uuidv7 } from "uuidv7";
-import type { Database } from "../db/client.js";
+import type { Executor } from "../db/client.js";
 import { activityFeed, settlements } from "../db/schema.js";
 
 export interface CreateSettlementInput {
+  id?: string | undefined;
+  requestHash?: string | undefined;
   groupId: string | null;
   fromUserId: string;
   toUserId: string;
@@ -14,8 +16,8 @@ export interface CreateSettlementInput {
   createdBy: string;
 }
 
-export async function createSettlement(db: Database, input: CreateSettlementInput): Promise<{ id: string }> {
-  const id = uuidv7();
+export async function createSettlement(db: Executor, input: CreateSettlementInput): Promise<{ id: string }> {
+  const id = input.id ?? uuidv7();
 
   await db.transaction(async (tx) => {
     await tx.insert(settlements).values({
@@ -32,6 +34,7 @@ export async function createSettlement(db: Database, input: CreateSettlementInpu
       note: input.note,
       settledAt: input.settledAt,
       createdBy: input.createdBy,
+      requestHash: input.requestHash ?? null,
       version: 1,
     });
 

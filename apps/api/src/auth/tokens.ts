@@ -1,7 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
 import jwt from "jsonwebtoken";
-import type { Database } from "../db/client.js";
-import { refreshTokens } from "../db/schema.js";
+import { eq } from "drizzle-orm";
+import { InvalidRefreshTokenError } from "./errors.js";
+import type { Executor } from "../db/client.js";
+import { refreshTokens, users } from "../db/schema.js";
 
 // Opaque tokens (refresh tokens, email-verify/reset tokens, §5): the raw
 // token is only ever shown to the client once (in a cookie or an email
@@ -36,12 +38,22 @@ export function verifyAccessToken(token: string, secret: string): AccessTokenPay
 /** Shared by every call site that needs to start a session (login,
  * refresh rotation, invite acceptance) so token issuance stays in one
  * place rather than duplicated per caller. */
-export async function issueRefreshToken(db: Database, userId: string, ttlDays: number): Promise<string> {
+export async function issueRefreshToken(
+  db: Executor,
+  user: { id: string; tokenVersion: number },
+  ttlDays: number,
+): Promise<string> {
   const raw = generateOpaqueToken();
-  await db.insert(refreshTokens).values({
-    userId,
-    tokenHash: hashOpaqueToken(raw),
-    expiresAt: new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000),
+  await db.transaction(async (tx) => {
+    // Locked and rechecked: a password reset since `user` was read must not
+    // be outlived by a session issued against the old credentials.
+    const [current] = await tx.select({ tokenVersion: users.tokenVersion }).from(users).where(eq(users.id, user.id)).for("update");
+    if (current?.tokenVersion !== user.tokenVersion) throw new InvalidRefreshTokenError();
+    await tx.insert(refreshTokens).values({
+      userId: user.id,
+      tokenHash: hashOpaqueToken(raw),
+      expiresAt: new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000),
+    });
   });
   return raw;
 }

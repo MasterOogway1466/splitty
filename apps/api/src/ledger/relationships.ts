@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
-import type { Database } from "../db/client.js";
+import type { Executor } from "../db/client.js";
 import { expenseParticipants, expensePayers, expenses, friendLinks, groupMembers, groups } from "../db/schema.js";
 import { NotConnectedError } from "../groups/errors.js";
 import { computePairwiseBalances } from "./balances.js";
@@ -7,7 +7,7 @@ import { computePairwiseBalances } from "./balances.js";
 /** docs/PLAN-PUBLIC.md §5: a direct entry may only name people the
  * requester shares an active group with, is linked to, or has already
  * split with. An unknown id gets the same response as a stranger's. */
-export async function requireConnected(db: Database, userId: string, otherUserIds: Iterable<string>): Promise<void> {
+export async function requireConnected(db: Executor, userId: string, otherUserIds: Iterable<string>): Promise<void> {
   const remaining = new Set(otherUserIds);
   remaining.delete(userId);
   const settle = (ids: Iterable<string>) => {
@@ -31,7 +31,7 @@ export async function requireConnected(db: Database, userId: string, otherUserId
  * never past zero — with someone the requester isn't otherwise connected
  * to, since a mutual contact may have recorded that debt. */
 export async function requireSettleable(
-  db: Database,
+  db: Executor,
   userId: string,
   input: { fromUserId: string; toUserId: string; amountMinor: number; currency: string },
 ): Promise<void> {
@@ -47,7 +47,7 @@ export async function requireSettleable(
 /** People the user has split with: in a group, or in a direct expense one
  * of the two recorded. A direct expense recorded by a third person is
  * excluded — it must not connect strangers to each other. */
-async function pastSplitIds(db: Database, userId: string): Promise<string[]> {
+async function pastSplitIds(db: Executor, userId: string): Promise<string[]> {
   const involved = async (filter: SQL | undefined) => {
     const columns = { expenseId: expenses.id, groupId: expenses.groupId, createdBy: expenses.createdBy };
     const paid = await db
@@ -72,7 +72,7 @@ async function pastSplitIds(db: Database, userId: string): Promise<string[]> {
 
 /** Current co-members across every non-deleted group; includes `userId`
  * itself when they belong to any. */
-export async function activeCoMemberIds(db: Database, userId: string): Promise<string[]> {
+export async function activeCoMemberIds(db: Executor, userId: string): Promise<string[]> {
   const myGroups = await db
     .select({ groupId: groupMembers.groupId })
     .from(groupMembers)
