@@ -1,9 +1,10 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { UpdateProfileRequest, UserProfile } from "@splitty/shared";
 import type { Database } from "../db/client.js";
 import { emailTokens, refreshTokens, users } from "../db/schema.js";
 import type { Env } from "../env.js";
 import type { Mailer } from "../mail/mailer.js";
+import { sendClaimEmail } from "../invites/send.js";
 import { sendCappedEmail } from "../mail/capped.js";
 import { getLockoutState, recordFailedLogin, resetLockout } from "./lockout.js";
 import { hashPassword, verifyPassword } from "./passwords.js";
@@ -73,7 +74,7 @@ export class AuthService {
     await sendCappedEmail(this.#db, this.#mailer, userId, {
       to: email,
       subject: "Verify your email",
-      text: `Welcome to Splitty! Verify your email:\n\n${link}\n\nThis link expires in 24 hours.`,
+      text: `Welcome to Splitty! Verify your email:\n\n${link}\n\nThis link expires in 24 hours. If you didn't sign up for Splitty, ignore this email.`,
     });
   }
 
@@ -92,15 +93,29 @@ export class AuthService {
         })
         .returning();
     } catch (err) {
-      if (isUniqueViolation(err)) throw new EmailAlreadyRegisteredError();
-      throw err;
+      if (!isUniqueViolation(err)) throw err;
+      const [existing] = await this.#db.select().from(users).where(eq(users.email, input.email));
+      if (existing?.status !== "invited") throw new EmailAlreadyRegisteredError();
+      // An invited placeholder: whoever is signing up hasn't proven they
+      // own the address, so the password they typed is discarded and the
+      // account can only be claimed through the emailed link.
+      await sendClaimEmail(this.#db, this.#mailer, this.#env, { id: existing.id, email: input.email });
+      return { user: existing };
     }
     if (!inserted) throw new Error("Insert returned no row");
     await this.#sendVerificationEmail(inserted.id, input.email);
     return { user: inserted };
   }
 
-  async verifyEmail(rawToken: string): Promise<void> {
+  async resendVerification(user: UserRow): Promise<void> {
+    if (user.emailVerifiedAt || !user.email) return;
+    await this.#sendVerificationEmail(user.id, user.email);
+  }
+
+  /** Needs both the emailed link and the signup password. Otherwise anyone
+   * could sign up with someone else's address and have the real owner
+   * verify it for them just by clicking the link. Starts a session. */
+  async verifyEmail(rawToken: string, password: string): Promise<{ user: UserRow; accessToken: string; refreshTokenRaw: string }> {
     const tokenHash = hashOpaqueToken(rawToken);
     const [tokenRow] = await this.#db
       .select()
@@ -109,10 +124,30 @@ export class AuthService {
     if (!tokenRow || tokenRow.usedAt || tokenRow.expiresAt < new Date()) {
       throw new InvalidOrExpiredTokenError();
     }
-    await this.#db.transaction(async (tx) => {
-      await tx.update(emailTokens).set({ usedAt: new Date() }).where(eq(emailTokens.id, tokenRow.id));
-      await tx.update(users).set({ emailVerifiedAt: new Date(), updatedAt: new Date() }).where(eq(users.id, tokenRow.userId));
+    const [account] = await this.#db.select().from(users).where(eq(users.id, tokenRow.userId));
+    if (!account || account.status !== "active") throw new InvalidOrExpiredTokenError();
+    if (!account.passwordHash || !(await verifyPassword(account.passwordHash, password))) {
+      throw new InvalidCredentialsError();
+    }
+
+    const user = await this.#db.transaction(async (tx) => {
+      const spent = await tx
+        .update(emailTokens)
+        .set({ usedAt: new Date() })
+        .where(and(eq(emailTokens.id, tokenRow.id), isNull(emailTokens.usedAt)))
+        .returning({ id: emailTokens.id });
+      // Pinned to the hash just checked: a reset landing in between wins.
+      const [verified] = await tx
+        .update(users)
+        .set({ emailVerifiedAt: new Date(), updatedAt: new Date() })
+        .where(and(eq(users.id, account.id), eq(users.status, "active"), eq(users.passwordHash, account.passwordHash!)))
+        .returning();
+      if (spent.length === 0 || !verified) throw new InvalidOrExpiredTokenError();
+      return verified;
     });
+    const accessToken = signAccessToken(user, this.#env.JWT_SECRET, this.#env.ACCESS_TOKEN_TTL_MINUTES);
+    const refreshTokenRaw = await issueRefreshToken(this.#db, user.id, this.#env.REFRESH_TOKEN_TTL_DAYS);
+    return { user, accessToken, refreshTokenRaw };
   }
 
   async login(input: { email: string; password: string }): Promise<{ user: UserRow; accessToken: string; refreshTokenRaw: string }> {
@@ -142,7 +177,7 @@ export class AuthService {
 
     await resetLockout(this.#db, user.id);
 
-    const accessToken = signAccessToken(user.id, this.#env.JWT_SECRET, this.#env.ACCESS_TOKEN_TTL_MINUTES);
+    const accessToken = signAccessToken(user, this.#env.JWT_SECRET, this.#env.ACCESS_TOKEN_TTL_MINUTES);
     const refreshTokenRaw = await issueRefreshToken(this.#db, user.id, this.#env.REFRESH_TOKEN_TTL_DAYS);
     return { user, accessToken, refreshTokenRaw };
   }
@@ -165,7 +200,7 @@ export class AuthService {
     await this.#db.update(refreshTokens).set({ revokedAt: new Date() }).where(eq(refreshTokens.id, tokenRow.id));
 
     const refreshTokenRaw = await issueRefreshToken(this.#db, user.id, this.#env.REFRESH_TOKEN_TTL_DAYS);
-    const accessToken = signAccessToken(user.id, this.#env.JWT_SECRET, this.#env.ACCESS_TOKEN_TTL_MINUTES);
+    const accessToken = signAccessToken(user, this.#env.JWT_SECRET, this.#env.ACCESS_TOKEN_TTL_MINUTES);
     return { accessToken, refreshTokenRaw };
   }
 
@@ -180,6 +215,10 @@ export class AuthService {
       // Always a no-op-looking success from the caller's perspective —
       // confirming or denying an email's existence here is exactly the
       // enumeration this endpoint must not leak.
+      return;
+    }
+    if (user.status === "invited") {
+      await sendClaimEmail(this.#db, this.#mailer, this.#env, { id: user.id, email: user.email });
       return;
     }
     const rawToken = generateOpaqueToken();
@@ -210,7 +249,12 @@ export class AuthService {
     const passwordHash = await hashPassword(newPassword);
     await this.#db.transaction(async (tx) => {
       await tx.update(emailTokens).set({ usedAt: new Date() }).where(eq(emailTokens.id, tokenRow.id));
-      await tx.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, tokenRow.userId));
+      // Following the emailed link proves ownership of the address, so it
+      // verifies the account too.
+      await tx
+        .update(users)
+        .set({ passwordHash, tokenVersion: sql`${users.tokenVersion} + 1`, emailVerifiedAt: sql`coalesce(${users.emailVerifiedAt}, now())`, updatedAt: new Date() })
+        .where(eq(users.id, tokenRow.userId));
       // A password reset invalidates every existing session — whatever
       // motivated the reset, nothing should still be logged in on the
       // old password afterward.

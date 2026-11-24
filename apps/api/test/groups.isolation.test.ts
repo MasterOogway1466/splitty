@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { authHeader, createTestContext, createVerifiedUser, truncateAllTestTables, type TestContext } from "./setup.js";
+import { authHeader, connectUsers, createTestContext, createVerifiedUser, truncateAllTestTables, type TestContext } from "./setup.js";
 
 describe("cross-account data isolation (docs/PLAN-PUBLIC.md §5/§12)", () => {
   let ctx: TestContext;
@@ -74,6 +74,8 @@ describe("cross-account data isolation (docs/PLAN-PUBLIC.md §5/§12)", () => {
     const bob = await createVerifiedUser(ctx, { email: "bob4@example.com", password: "password123", displayName: "Bob" });
     const carol = await createVerifiedUser(ctx, { email: "carol4@example.com", password: "password123", displayName: "Carol" });
     const mallory = await createVerifiedUser(ctx, { email: "mallory4@example.com", password: "password123", displayName: "Mallory" });
+
+    await connectUsers(ctx, bob, "carol4@example.com");
 
     // Bob paid for something Carol owes him for — a direct IOU, no group.
     const expenseRes = await ctx.app.inject({

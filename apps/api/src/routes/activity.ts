@@ -1,7 +1,7 @@
 import { desc, eq, inArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { activityFeed, groups, users } from "../db/schema.js";
-import { authenticate } from "../plugins/authenticate.js";
+import { authenticateVerified } from "../plugins/authenticate.js";
 
 /** Global activity feed — every group-scoped and direct event where the
  * current user is a recipient (docs/PLAN-PUBLIC.md §6/§9: one shared
@@ -9,7 +9,7 @@ import { authenticate } from "../plugins/authenticate.js";
 export async function registerActivityRoutes(app: FastifyInstance): Promise<void> {
   const { db } = app;
 
-  app.addHook("preHandler", (request, reply) => authenticate(app, request, reply));
+  app.addHook("preHandler", (request, reply) => authenticateVerified(app, request, reply));
 
   app.get("/", async (request) => {
     const userId = request.currentUser!.id;

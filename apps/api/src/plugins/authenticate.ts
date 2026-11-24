@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { verifyAccessToken } from "../auth/tokens.js";
-import { AccountSuspendedError, UnauthenticatedError } from "../auth/errors.js";
+import { verifyAccessToken, type AccessTokenPayload } from "../auth/tokens.js";
+import { AccountSuspendedError, EmailNotVerifiedError, UnauthenticatedError } from "../auth/errors.js";
 
 /**
  * docs/PLAN-PUBLIC.md §5: a `suspended` account is rejected outright at
@@ -17,15 +17,15 @@ export async function authenticate(app: FastifyInstance, request: FastifyRequest
   }
   const token = header.slice("Bearer ".length);
 
-  let userId: string;
+  let claims: AccessTokenPayload;
   try {
-    userId = verifyAccessToken(token, app.env.JWT_SECRET).sub;
+    claims = verifyAccessToken(token, app.env.JWT_SECRET);
   } catch {
     throw new UnauthenticatedError();
   }
 
-  const user = await app.authService.getUserById(userId);
-  if (!user) {
+  const user = await app.authService.getUserById(claims.sub);
+  if (!user || user.tokenVersion !== claims.ver) {
     throw new UnauthenticatedError();
   }
   if (user.status === "suspended" || user.status === "deleted") {
@@ -33,4 +33,14 @@ export async function authenticate(app: FastifyInstance, request: FastifyRequest
   }
 
   request.currentUser = user;
+}
+
+/** §5: everything outside the account itself requires a verified address.
+ * Reads included — otherwise someone could register another person's
+ * email, wait to be added to a group as them, and read it. */
+export async function authenticateVerified(app: FastifyInstance, request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  await authenticate(app, request, reply);
+  if (!request.currentUser!.emailVerifiedAt) {
+    throw new EmailNotVerifiedError();
+  }
 }

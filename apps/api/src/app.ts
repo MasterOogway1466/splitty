@@ -7,6 +7,7 @@ import {
   AccountSuspendedError,
   AuthError,
   EmailAlreadyRegisteredError,
+  EmailNotVerifiedError,
   InvalidCredentialsError,
   InvalidOrExpiredTokenError,
   InvalidRefreshTokenError,
@@ -21,6 +22,7 @@ import {
   GroupNotFoundError,
   GroupNotSettledError,
   NonzeroBalanceError,
+  NotConnectedError,
   NotExpenseParticipantError,
   NotGroupOwnerError,
   NotGroupMemberError,
@@ -75,7 +77,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
       reply.header("Retry-After", String(retryAfterSeconds));
       return reply.status(423).send({ error: error.code, message: error.message, retryAfterSeconds });
     }
-    if (error instanceof AccountSuspendedError) {
+    if (error instanceof AccountSuspendedError || error instanceof EmailNotVerifiedError) {
       return reply.status(403).send({ error: error.code, message: error.message });
     }
     if (error instanceof EmailAlreadyRegisteredError) {
@@ -105,7 +107,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     if (error instanceof GroupNotSettledError) {
       return reply.status(409).send({ error: error.code, message: error.message });
     }
-    if (error instanceof NotGroupOwnerError) {
+    if (error instanceof NotGroupOwnerError || error instanceof NotConnectedError) {
       return reply.status(403).send({ error: error.code, message: error.message });
     }
     if (error instanceof DomainError) {

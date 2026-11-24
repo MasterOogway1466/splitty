@@ -51,7 +51,7 @@ export function App() {
         <Route
           path="/profile"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowUnverified>
               <ProfilePage />
             </ProtectedRoute>
           }

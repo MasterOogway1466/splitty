@@ -17,10 +17,11 @@ export function hashOpaqueToken(token: string): string {
 
 export interface AccessTokenPayload {
   sub: string;
+  ver: number;
 }
 
-export function signAccessToken(userId: string, secret: string, ttlMinutes: number): string {
-  return jwt.sign({ sub: userId }, secret, { expiresIn: `${ttlMinutes}m` });
+export function signAccessToken(user: { id: string; tokenVersion: number }, secret: string, ttlMinutes: number): string {
+  return jwt.sign({ sub: user.id, ver: user.tokenVersion }, secret, { expiresIn: `${ttlMinutes}m` });
 }
 
 export function verifyAccessToken(token: string, secret: string): AccessTokenPayload {
@@ -28,7 +29,8 @@ export function verifyAccessToken(token: string, secret: string): AccessTokenPay
   if (typeof decoded === "string" || typeof decoded.sub !== "string") {
     throw new Error("Invalid access token payload");
   }
-  return { sub: decoded.sub };
+  // Tokens issued before versions existed count as version 0.
+  return { sub: decoded.sub, ver: typeof decoded.ver === "number" ? decoded.ver : 0 };
 }
 
 /** Shared by every call site that needs to start a session (login,

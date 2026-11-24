@@ -49,7 +49,7 @@ export async function createVerifiedUser(
   const { userId } = signupRes.json();
 
   const verifyToken = extractToken(ctx.mailer.sent[ctx.mailer.sent.length - 1]!.text);
-  const verifyRes = await ctx.app.inject({ method: "POST", url: "/api/auth/verify-email", payload: { token: verifyToken } });
+  const verifyRes = await ctx.app.inject({ method: "POST", url: "/api/auth/verify-email", payload: { token: verifyToken, password: input.password } });
   if (verifyRes.statusCode !== 200) throw new Error(`Verify failed: ${verifyRes.body}`);
 
   const loginRes = await ctx.app.inject({
@@ -61,6 +61,15 @@ export async function createVerifiedUser(
   const { accessToken } = loginRes.json();
 
   return { userId, accessToken };
+}
+
+/** Puts two users in a shared group, so they may record direct entries
+ * with each other. */
+export async function connectUsers(ctx: TestContext, owner: { accessToken: string }, otherEmail: string): Promise<void> {
+  const headers = authHeader(owner.accessToken);
+  const group = await ctx.app.inject({ method: "POST", url: "/api/groups", headers, payload: { name: "Connected", defaultCurrency: "USD" } });
+  const res = await ctx.app.inject({ method: "POST", url: `/api/groups/${group.json().id}/members`, headers, payload: { email: otherEmail } });
+  if (res.statusCode !== 204) throw new Error(`Connect failed: ${res.body}`);
 }
 
 export function authHeader(accessToken: string): { authorization: string } {

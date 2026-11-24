@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { authHeader, createTestContext, createVerifiedUser, truncateAllTestTables, type TestContext } from "./setup.js";
+import { authHeader, connectUsers, createTestContext, createVerifiedUser, truncateAllTestTables, type TestContext } from "./setup.js";
 
 describe("balance aggregation across groups and direct expenses (docs/PLAN-PUBLIC.md §7)", () => {
   let ctx: TestContext;
@@ -72,6 +72,7 @@ describe("balance aggregation across groups and direct expenses (docs/PLAN-PUBLI
   it("global balance reflects paid, owed, and settlements across everything", async () => {
     const alice = await createVerifiedUser(ctx, { email: "alice10@example.com", password: "password123", displayName: "Alice" });
     const bob = await createVerifiedUser(ctx, { email: "bob10@example.com", password: "password123", displayName: "Bob" });
+    await connectUsers(ctx, alice, "bob10@example.com");
 
     await ctx.app.inject({
       method: "POST",

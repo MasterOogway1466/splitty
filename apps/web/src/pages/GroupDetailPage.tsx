@@ -99,6 +99,7 @@ export function GroupDetailPage() {
   }
   const group = groupQuery.data;
   const currency = group.defaultCurrency;
+  const isOwner = group.members.find((m) => m.userId === user?.id)?.role === "owner";
   const moneyStep = moneyInputStep(currency);
 
   function toMinor(value: string): number {
@@ -331,7 +332,7 @@ export function GroupDetailPage() {
           </button>
         )}
 
-        {group.members.find((m) => m.userId === user?.id)?.role === "owner" &&
+        {isOwner &&
           (confirmDelete ? (
             <span className="text-sm text-ink-muted">
               Delete "{group.name}" for everyone?{" "}
@@ -400,7 +401,7 @@ export function GroupDetailPage() {
                 <span className={`figure ${m.netBalanceMinor >= 0 ? "text-ledger" : "text-rust"}`}>
                   {m.netBalanceMinor === 0 ? "settled up" : formatMoney(m.netBalanceMinor, currency)}
                 </span>
-                {m.userId !== user?.id && (
+                {isOwner && m.userId !== user?.id && (
                   <button onClick={() => removeMember.mutate(m.userId)} className="text-xs text-ink-muted hover:text-rust transition-colors">
                     remove
                   </button>

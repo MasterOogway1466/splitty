@@ -5,7 +5,8 @@ import { checkAndRecordRateLimit } from "../auth/rateLimit.js";
 import { expenseParticipants, expensePayers, expenses } from "../db/schema.js";
 import { NotExpenseParticipantError } from "../groups/errors.js";
 import { createExpense, participantUserIdsOf } from "../ledger/expenses.js";
-import { authenticate } from "../plugins/authenticate.js";
+import { requireConnected } from "../ledger/relationships.js";
+import { authenticateVerified } from "../plugins/authenticate.js";
 import { serializeExpense } from "./serializers.js";
 
 const EXPENSE_CREATE_CAP = { windowSeconds: 24 * 60 * 60, maxEvents: 200 };
@@ -17,7 +18,7 @@ const EXPENSE_CREATE_CAP = { windowSeconds: 24 * 60 * 60, maxEvents: 200 };
 export async function registerExpenseRoutes(app: FastifyInstance): Promise<void> {
   const { db } = app;
 
-  app.addHook("preHandler", (request, reply) => authenticate(app, request, reply));
+  app.addHook("preHandler", (request, reply) => authenticateVerified(app, request, reply));
 
   app.get("/", async (request) => {
     const userId = request.currentUser!.id;
@@ -56,6 +57,7 @@ export async function registerExpenseRoutes(app: FastifyInstance): Promise<void>
     if (!payerIds.includes(userId) && !participantIds.includes(userId)) {
       throw new NotExpenseParticipantError();
     }
+    await requireConnected(db, userId, [...payerIds, ...participantIds]);
 
     const { id } = await createExpense(db, {
       groupId: null,

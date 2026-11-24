@@ -22,6 +22,9 @@ export type SignupResponse = z.infer<typeof signupResponseSchema>;
 
 export const verifyEmailRequestSchema = z.object({
   token: z.string().min(1),
+  // The signup password: the link proves the address, this proves it's the
+  // same person who signed up with it.
+  password: z.string().min(1).max(200),
 });
 export type VerifyEmailRequest = z.infer<typeof verifyEmailRequestSchema>;
 

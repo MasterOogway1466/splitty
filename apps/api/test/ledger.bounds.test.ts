@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { MAX_AMOUNT_MINOR } from "@splitty/shared";
-import { authHeader, createTestContext, createVerifiedUser, truncateAllTestTables, type TestContext } from "./setup.js";
+import { authHeader, connectUsers, createTestContext, createVerifiedUser, truncateAllTestTables, type TestContext } from "./setup.js";
 
 describe("amount bounds on ledger writes", () => {
   let ctx: TestContext;
@@ -22,6 +22,7 @@ describe("amount bounds on ledger writes", () => {
       users.push(await createVerifiedUser(ctx, { email: `${name}@example.com`, password: "password123", displayName: name }));
     }
     const [a, b, c] = users as [(typeof users)[0], (typeof users)[0], (typeof users)[0]];
+    for (const name of ["b", "c"]) await connectUsers(ctx, a, `${name}@example.com`);
     const post = (url: string, payload: object) => ctx.app.inject({ method: "POST", url, headers: authHeader(a.accessToken), payload });
     const expense = (amountMinor: number, split: object) => ({
       description: "x", amountMinor, currency: "USD", payers: [{ userId: a.userId, amountMinor }], ...split,
