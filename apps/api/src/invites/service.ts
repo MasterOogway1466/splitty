@@ -73,7 +73,7 @@ export class InviteService {
     const [user] = await this.#db.select().from(users).where(eq(users.id, invite.placeholderUserId));
     if (!user) throw new Error("Placeholder user missing after accept");
 
-    const accessToken = signAccessToken(user.id, this.#env.JWT_SECRET, this.#env.ACCESS_TOKEN_TTL_MINUTES);
+    const accessToken = signAccessToken(user, this.#env.JWT_SECRET, this.#env.ACCESS_TOKEN_TTL_MINUTES);
     const refreshTokenRaw = await issueRefreshToken(this.#db, user.id, this.#env.REFRESH_TOKEN_TTL_DAYS);
     return { user, accessToken, refreshTokenRaw };
   }

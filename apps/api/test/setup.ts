@@ -49,7 +49,7 @@ export async function createVerifiedUser(
   const { userId } = signupRes.json();
 
   const verifyToken = extractToken(ctx.mailer.sent[ctx.mailer.sent.length - 1]!.text);
-  const verifyRes = await ctx.app.inject({ method: "POST", url: "/api/auth/verify-email", payload: { token: verifyToken } });
+  const verifyRes = await ctx.app.inject({ method: "POST", url: "/api/auth/verify-email", payload: { token: verifyToken, password: input.password } });
   if (verifyRes.statusCode !== 200) throw new Error(`Verify failed: ${verifyRes.body}`);
 
   const loginRes = await ctx.app.inject({

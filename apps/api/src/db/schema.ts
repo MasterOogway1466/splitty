@@ -40,6 +40,8 @@ export const users = pgTable(
     timezone: text("timezone").notNull().default("UTC"),
     status: text("status", { enum: userStatusValues }).notNull().default("active"),
     isAdmin: boolean("is_admin").notNull().default(false),
+    // Embedded in access tokens; bumping it invalidates every one issued so far.
+    tokenVersion: integer("token_version").notNull().default(0),
     emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),

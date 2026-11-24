@@ -93,6 +93,33 @@ describe("access and abuse hardening (docs/PLAN-PUBLIC.md §0b D4–D9)", () => 
     });
   });
 
+  it("D5: a debt a mutual contact recorded can be paid down, but grants nothing else", async () => {
+    const a = await verified("a");
+    const b = await verified("b");
+    const c = await verified("c");
+    for (const other of ["b", "c"]) await add(a, await makeGroup(a), `${other}@example.com`);
+    // Created by a, but b paid: c now owes b 500 without the two being connected.
+    expect((await call(a, "POST", "/api/expenses", equal(b, [a, c]))).statusCode).toBe(201);
+    expect((await call(c, "POST", "/api/expenses", equal(c, [b]))).statusCode).toBe(403);
+    const settle = (from: User, to: User, amountMinor: number, currency = "USD") =>
+      call(c, "POST", "/api/settlements", { fromUserId: from.userId, toUserId: to.userId, amountMinor, currency });
+    expect((await settle(b, c, 500)).statusCode).toBe(403);
+    expect((await settle(c, b, 501)).statusCode).toBe(403);
+    expect((await settle(c, b, 500, "EUR")).statusCode).toBe(403);
+    expect((await settle(c, b, 500)).statusCode).toBe(201);
+    expect((await settle(c, b, 1)).statusCode).toBe(403);
+    expect((await call(c, "POST", "/api/expenses", equal(c, [b]))).statusCode).toBe(403);
+  });
+
+  it("a password reset invalidates access tokens already issued", async () => {
+    const a = await verified("a");
+    await open("/api/auth/request-password-reset", { email: "a@example.com" });
+    await open("/api/auth/confirm-password-reset", { token: lastToken(), newPassword: "another-password" });
+    expect((await call(a, "GET", "/api/auth/me")).statusCode).toBe(401);
+    const { accessToken } = (await open("/api/auth/login", { email: "a@example.com", password: "another-password" })).json();
+    expect((await call({ userId: a.userId, accessToken }, "GET", "/api/groups")).statusCode).toBe(200);
+  });
+
   describe("D6: verified email required", () => {
     it("blocks group and ledger routes, including reads, until verified", async () => {
       const u = await unverified("u");
@@ -121,8 +148,32 @@ describe("access and abuse hardening (docs/PLAN-PUBLIC.md §0b D4–D9)", () => 
       const token = lastToken();
       for (let i = 0; i < 2; i++) await call(u, "POST", "/api/auth/resend-verification");
       expect((await call(u, "POST", "/api/auth/resend-verification")).statusCode).toBe(429);
-      expect((await open("/api/auth/verify-email", { token })).statusCode).toBe(200);
+      expect((await open("/api/auth/verify-email", { token, password: "password123" })).statusCode).toBe(200);
       expect((await call(u, "GET", "/api/groups")).statusCode).toBe(200);
+    });
+
+    it("the link alone does not verify an account someone else signed up with your address", async () => {
+      const attacker = await unverified("victim");
+      const token = lastToken();
+      expect((await open("/api/auth/verify-email", { token })).statusCode).toBe(400);
+      expect((await open("/api/auth/verify-email", { token, password: "not-the-password" })).statusCode).toBe(401);
+      expect((await call(attacker, "GET", "/api/groups")).statusCode).toBe(403);
+
+      // The real owner takes over with a reset, which locks the attacker out.
+      await open("/api/auth/request-password-reset", { email: "victim@example.com" });
+      await open("/api/auth/confirm-password-reset", { token: lastToken(), newPassword: "owners-password" });
+      expect((await call(attacker, "GET", "/api/groups")).statusCode).toBe(401);
+      expect((await open("/api/auth/login", { email: "victim@example.com", password: "password123" })).statusCode).toBe(401);
+      // ...and the older verification link is no use to anyone afterwards.
+      expect((await open("/api/auth/verify-email", { token, password: "password123" })).statusCode).toBe(401);
+    });
+
+    it("verifying with the right password starts a session", async () => {
+      await unverified("u");
+      const res = await open("/api/auth/verify-email", { token: lastToken(), password: "password123" });
+      expect(res.json().user.emailVerified).toBe(true);
+      expect(res.cookies.some((c) => c.name === "refresh_token")).toBe(true);
+      expect((await call({ userId: "", accessToken: res.json().accessToken }, "GET", "/api/groups")).statusCode).toBe(200);
     });
 
     it("sends nothing to an already verified account, and a password reset counts as verification", async () => {
@@ -134,7 +185,8 @@ describe("access and abuse hardening (docs/PLAN-PUBLIC.md §0b D4–D9)", () => 
       const u = await unverified("u");
       await open("/api/auth/request-password-reset", { email: "u@example.com" });
       await open("/api/auth/confirm-password-reset", { token: lastToken(), newPassword: "another-password" });
-      expect((await call(u, "GET", "/api/auth/me")).json().emailVerified).toBe(true);
+      const login = await open("/api/auth/login", { email: "u@example.com", password: "another-password" });
+      expect(login.json().user.emailVerified).toBe(true);
     });
   });
 

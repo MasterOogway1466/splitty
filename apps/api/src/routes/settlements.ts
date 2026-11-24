@@ -5,7 +5,7 @@ import { checkAndRecordRateLimit } from "../auth/rateLimit.js";
 import { settlements } from "../db/schema.js";
 import { NotExpenseParticipantError } from "../groups/errors.js";
 import { createSettlement } from "../ledger/settlements.js";
-import { requireConnected } from "../ledger/relationships.js";
+import { requireSettleable } from "../ledger/relationships.js";
 import { authenticateVerified } from "../plugins/authenticate.js";
 import { serializeSettlement } from "./serializers.js";
 
@@ -44,7 +44,7 @@ export async function registerSettlementRoutes(app: FastifyInstance): Promise<vo
     if (userId !== body.fromUserId && userId !== body.toUserId) {
       throw new NotExpenseParticipantError();
     }
-    await requireConnected(db, userId, [body.fromUserId, body.toUserId]);
+    await requireSettleable(db, userId, body);
 
     const { id } = await createSettlement(db, {
       groupId: null,

@@ -15,6 +15,13 @@
       "when": 1790329130624,
       "tag": "0001_nosy_stepford_cuckoos",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795528164827,
+      "tag": "0002_tranquil_lady_deathstrike",
+      "breakpoints": true
     }
   ]
 }

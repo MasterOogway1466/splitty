@@ -65,6 +65,12 @@ async function tryRefresh(): Promise<boolean> {
   return refreshInFlight;
 }
 
+/** No refresh-and-retry: for calls where a 401 is the answer itself (a
+ * wrong password) rather than an expired session. */
+export async function apiFetchOnce(path: string, init: RequestInit = {}): Promise<unknown> {
+  return parseOrThrow(await rawFetch(path, init));
+}
+
 /** Fetch wrapper that transparently retries once through a silent
  * refresh on a 401, so an expired ~15-minute access token doesn't
  * surface as a login prompt while the refresh cookie is still valid. */

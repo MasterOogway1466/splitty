@@ -45,7 +45,7 @@ describe("auth flows (docs/PLAN-PUBLIC.md §12)", () => {
     const verifyRes = await ctx.app.inject({
       method: "POST",
       url: "/api/auth/verify-email",
-      payload: { token: verifyToken },
+      payload: { token: verifyToken, password: "correct horse battery staple" },
     });
     expect(verifyRes.statusCode).toBe(200);
 

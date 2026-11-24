@@ -27,13 +27,14 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     return { userId: user.id, message: "verification email sent" as const };
   });
 
-  app.post("/verify-email", async (request) => {
+  app.post("/verify-email", async (request, reply) => {
     const rl = await checkAndRecordRateLimit(db, "verify_email_ip", request.ip, { windowSeconds: 3600, maxEvents: 20 });
     if (!rl.allowed) throw new RateLimitedError();
 
     const body = verifyEmailRequestSchema.parse(request.body);
-    await authService.verifyEmail(body.token);
-    return { message: "email verified" };
+    const { user, accessToken, refreshTokenRaw } = await authService.verifyEmail(body.token, body.password);
+    setRefreshCookie(reply, env, refreshTokenRaw);
+    return { accessToken, user: toUserProfile(user) };
   });
 
   // §5 Phase 0 requirement: rate limiting on login, per-IP and per-account

@@ -1,8 +1,8 @@
-import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
 import type { Database } from "../db/client.js";
-import { friendLinks, groupMembers, groups } from "../db/schema.js";
+import { expenseParticipants, expensePayers, expenses, friendLinks, groupMembers, groups } from "../db/schema.js";
 import { NotConnectedError } from "../groups/errors.js";
-import { computeAllPairwiseBalances } from "./balances.js";
+import { computePairwiseBalances } from "./balances.js";
 
 /** docs/PLAN-PUBLIC.md §5: a direct entry may only name people the
  * requester shares an active group with, is linked to, or has already
@@ -23,8 +23,51 @@ export async function requireConnected(db: Database, userId: string, otherUserId
   if (settle(links.map((l) => (l.userAId === userId ? l.userBId : l.userAId)))) return;
 
   if (settle(await activeCoMemberIds(db, userId))) return;
-  if (settle((await computeAllPairwiseBalances(db, userId)).keys())) return;
+  if (settle(await pastSplitIds(db, userId))) return;
   throw new NotConnectedError();
+}
+
+/** Direct settlements additionally allow paying down an outstanding debt —
+ * never past zero — with someone the requester isn't otherwise connected
+ * to, since a mutual contact may have recorded that debt. */
+export async function requireSettleable(
+  db: Database,
+  userId: string,
+  input: { fromUserId: string; toUserId: string; amountMinor: number; currency: string },
+): Promise<void> {
+  try {
+    await requireConnected(db, userId, [input.fromUserId, input.toUserId]);
+  } catch (err) {
+    if (!(err instanceof NotConnectedError)) throw err;
+    const owedToPayee = (await computePairwiseBalances(db, input.toUserId, input.fromUserId)).get(input.currency) ?? 0;
+    if (input.amountMinor > owedToPayee) throw err;
+  }
+}
+
+/** People the user has split with: in a group, or in a direct expense one
+ * of the two recorded. A direct expense recorded by a third person is
+ * excluded — it must not connect strangers to each other. */
+async function pastSplitIds(db: Database, userId: string): Promise<string[]> {
+  const involved = async (filter: SQL | undefined) => {
+    const columns = { expenseId: expenses.id, groupId: expenses.groupId, createdBy: expenses.createdBy };
+    const paid = await db
+      .select({ ...columns, userId: expensePayers.userId })
+      .from(expensePayers)
+      .innerJoin(expenses, eq(expenses.id, expensePayers.expenseId))
+      .where(and(isNull(expenses.deletedAt), filter ?? eq(expensePayers.userId, userId)));
+    const owed = await db
+      .select({ ...columns, userId: expenseParticipants.userId })
+      .from(expenseParticipants)
+      .innerJoin(expenses, eq(expenses.id, expenseParticipants.expenseId))
+      .where(and(isNull(expenses.deletedAt), filter ?? eq(expenseParticipants.userId, userId)));
+    return [...paid, ...owed];
+  };
+  const mine = await involved(undefined);
+  if (mine.length === 0) return [];
+  const everyone = await involved(inArray(expenses.id, [...new Set(mine.map((r) => r.expenseId))]));
+  return everyone
+    .filter((r) => r.groupId !== null || r.createdBy === userId || r.createdBy === r.userId)
+    .map((r) => r.userId);
 }
 
 /** Current co-members across every non-deleted group; includes `userId`
