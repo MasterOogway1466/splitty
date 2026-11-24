@@ -4,6 +4,7 @@ export const activityTypeValues = [
   "expense_created",
   "expense_updated",
   "expense_deleted",
+  "expense_restored",
   "comment_added",
   "settlement_created",
   "settlement_deleted",
@@ -16,6 +17,8 @@ export const activityItemSchema = z.object({
   actorDisplayName: z.string(),
   entityType: z.string(),
   entityId: z.string().uuid(),
+  // Null once the reader can no longer open the entity.
+  entityLabel: z.string().nullable(),
   groupId: z.string().uuid().nullable(),
   groupName: z.string().nullable(),
   createdAt: z.string(),

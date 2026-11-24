@@ -1,6 +1,7 @@
 import { eq, inArray } from "drizzle-orm";
-import type { Expense, Settlement } from "@splitty/shared";
+import type { Expense, ExpenseHistoryEntry, ExpenseSnapshot, Settlement, ShareInput } from "@splitty/shared";
 import type { Database } from "../db/client.js";
+import type { readHistory } from "../ledger/lifecycle.js";
 import { expenseParticipants, expensePayers, expenses, settlements, users } from "../db/schema.js";
 
 type ExpenseRow = typeof expenses.$inferSelect;
@@ -25,15 +26,18 @@ export async function serializeExpense(db: Database, row: ExpenseRow): Promise<E
     currency: row.currency,
     amountMinor: row.amountMinor,
     splitMethod: row.splitMethod,
-    expenseDate: row.expenseDate.toISOString(),
+    expenseDate: row.expenseDate,
     createdBy: row.createdBy,
     payers: payerRows.map((p) => ({ userId: p.userId, displayName: nameMap.get(p.userId) ?? "Unknown", amountMinor: p.amountMinor })),
     participants: participantRows.map((p) => ({
       userId: p.userId,
       displayName: nameMap.get(p.userId) ?? "Unknown",
       owedAmountMinor: p.owedAmountMinor,
+      shareInput: (p.shareInput ?? null) as ShareInput | null,
     })),
     createdAt: row.createdAt.toISOString(),
+    version: row.version,
+    deletedAt: row.deletedAt?.toISOString() ?? null,
   };
 }
 
@@ -50,4 +54,34 @@ export function serializeSettlement(row: SettlementRow): Settlement {
     settledAt: row.settledAt.toISOString(),
     createdBy: row.createdBy,
   };
+}
+
+export async function serializeHistory(db: Database, entries: Awaited<ReturnType<typeof readHistory>>): Promise<ExpenseHistoryEntry[]> {
+  const snapshots = entries.flatMap(({ diff }) => [diff.before, diff.after]).filter((s) => !!s);
+  const ids = [...new Set(snapshots.flatMap((s) => [...s.payers, ...s.participants].map((p) => p.userId)))];
+  const userRows = ids.length ? await db.select({ id: users.id, displayName: users.displayName }).from(users).where(inArray(users.id, ids)) : [];
+  const names = new Map(userRows.map((u) => [u.id, u.displayName]));
+
+  const named = (snapshot: (typeof snapshots)[number] | null | undefined): ExpenseSnapshot | null =>
+    snapshot
+      ? {
+          ...snapshot,
+          payers: snapshot.payers.map((p) => ({ ...p, displayName: names.get(p.userId) ?? "Unknown" })),
+          participants: snapshot.participants.map((p) => ({
+            ...p,
+            shareInput: (p.shareInput ?? null) as ShareInput | null,
+            displayName: names.get(p.userId) ?? "Unknown",
+          })),
+        }
+      : null;
+
+  return entries.map(({ entry, editedByName, diff }) => ({
+    id: entry.id,
+    changeType: entry.changeType,
+    editedBy: entry.editedBy,
+    editedByName,
+    editedAt: entry.editedAt.toISOString(),
+    before: named(diff.before),
+    after: named(diff.after),
+  }));
 }

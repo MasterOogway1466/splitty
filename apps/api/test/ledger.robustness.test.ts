@@ -83,7 +83,7 @@ describe("ledger robustness (docs/PLAN-PUBLIC.md §0b D10–D13)", () => {
       await ctx.db.transaction(async (tx) => {
         await tx.select().from(groups).where(eq(groups.id, groupId)).for("no key update");
         await createExpense(tx, {
-          groupId, description: "x", notes: null, amountMinor: 1000, currency: "USD", categoryId: null, expenseDate: new Date(),
+          groupId, description: "x", notes: null, amountMinor: 1000, currency: "USD", categoryId: null, expenseDate: "2026-01-01",
           payers: [{ userId: a.userId, amountMinor: 1000 }], split: { splitMethod: "equal", participantUserIds: [b.userId] }, createdBy: a.userId,
         });
         leave = call(b, "POST", `/api/groups/${groupId}/leave`);

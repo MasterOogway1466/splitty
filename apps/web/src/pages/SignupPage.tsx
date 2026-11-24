@@ -10,12 +10,17 @@ export function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    if (password !== confirmPassword) {
+      setError("The passwords don't match.");
+      return;
+    }
     setSubmitting(true);
     try {
       await signup(email, password, displayName);
@@ -38,6 +43,15 @@ export function SignupPage() {
           type="password"
           value={password}
           onChange={setPassword}
+          autoComplete="new-password"
+          required
+          minLength={8}
+        />
+        <TextField
+          label="Confirm password"
+          type="password"
+          value={confirmPassword}
+          onChange={setConfirmPassword}
           autoComplete="new-password"
           required
           minLength={8}

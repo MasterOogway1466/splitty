@@ -48,24 +48,50 @@ export const splitSchema = z.discriminatedUnion("splitMethod", [
 ]);
 export type ExpenseSplit = z.infer<typeof splitSchema>;
 
-export const createExpenseRequestSchema = z
-  .object({
-    id: uuidv7Schema.optional(),
+/** A calendar date, not an instant: it means the same day everywhere. */
+export const calendarDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD")
+  .refine((v) => {
+    const date = new Date(`${v}T00:00:00Z`);
+    return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === v;
+  }, "Not a real date")
+  .refine((v) => v >= "1900-01-01" && v <= "2999-12-31", "Date out of range");
+
+const expenseFieldsSchema = z.object({
     description: z.string().trim().min(1).max(200),
     notes: z.string().trim().max(2000).optional(),
     amountMinor: z.number().int().positive().max(MAX_AMOUNT_MINOR),
     currency: z.enum(CURRENCY_CODES),
     categoryId: z.string().uuid().nullable().optional(),
-    expenseDate: z.string().datetime().optional(), // defaults to now if omitted
+    expenseDate: calendarDateSchema.optional(), // defaults to today if omitted
     payers: z.array(payerSchema).min(1).max(MAX_PEOPLE),
-  })
-  .and(splitSchema);
+});
+
+export const createExpenseRequestSchema = expenseFieldsSchema.extend({ id: uuidv7Schema.optional() }).and(splitSchema);
 export type CreateExpenseRequest = z.infer<typeof createExpenseRequestSchema>;
+
+// Replaces the whole expense. `version` is the one being edited, so a change
+// made by someone else in the meantime isn't silently overwritten.
+export const updateExpenseRequestSchema = expenseFieldsSchema.extend({ version: z.number().int().positive() }).and(splitSchema);
+export type UpdateExpenseRequest = z.infer<typeof updateExpenseRequestSchema>;
+
+export const expenseVersionRequestSchema = z.object({ version: z.number().int().positive() });
+
+/** What was entered for a participant, as opposed to what it came to. */
+export const shareInputSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("exact"), amountMinor: z.number().int() }),
+  z.object({ type: z.literal("percentage"), percentage: z.number() }),
+  z.object({ type: z.literal("shares"), shares: z.number() }),
+  z.object({ type: z.literal("adjustment"), adjustmentMinor: z.number().int() }),
+]);
+export type ShareInput = z.infer<typeof shareInputSchema>;
 
 export const expenseParticipantSchema = z.object({
   userId: z.string().uuid(),
   displayName: z.string(),
   owedAmountMinor: z.number().int(),
+  shareInput: shareInputSchema.nullable(),
 });
 
 export const expensePayerSchema = z.object({
@@ -88,5 +114,40 @@ export const expenseSchema = z.object({
   payers: z.array(expensePayerSchema),
   participants: z.array(expenseParticipantSchema),
   createdAt: z.string(),
+  version: z.number().int(),
+  deletedAt: z.string().nullable(),
 });
 export type Expense = z.infer<typeof expenseSchema>;
+
+export const expenseSnapshotSchema = expenseSchema.pick({
+  description: true,
+  notes: true,
+  categoryId: true,
+  currency: true,
+  amountMinor: true,
+  splitMethod: true,
+  expenseDate: true,
+  payers: true,
+  participants: true,
+});
+export type ExpenseSnapshot = z.infer<typeof expenseSnapshotSchema>;
+
+// Both are null for entries recorded before full versions were kept.
+export const expenseHistoryEntrySchema = z.object({
+  id: z.string().uuid(),
+  changeType: z.enum(["create", "update", "delete", "restore"]),
+  editedBy: z.string().uuid(),
+  editedByName: z.string(),
+  editedAt: z.string(),
+  before: expenseSnapshotSchema.nullable(),
+  after: expenseSnapshotSchema.nullable(),
+});
+export type ExpenseHistoryEntry = z.infer<typeof expenseHistoryEntrySchema>;
+
+export const categorySchema = z.object({
+  id: z.string().uuid(),
+  parentId: z.string().uuid().nullable(),
+  name: z.string(),
+  icon: z.string().nullable(),
+});
+export type Category = z.infer<typeof categorySchema>;

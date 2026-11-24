@@ -29,6 +29,13 @@
       "when": 1795529093668,
       "tag": "0003_far_caretaker",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795531399325,
+      "tag": "0004_same_micromacro",
+      "breakpoints": true
     }
   ]
 }

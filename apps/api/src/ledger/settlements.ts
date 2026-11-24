@@ -1,6 +1,7 @@
 import { uuidv7 } from "uuidv7";
+import { writeActivity } from "../activity/write.js";
 import type { Executor } from "../db/client.js";
-import { activityFeed, settlements } from "../db/schema.js";
+import { settlements } from "../db/schema.js";
 
 export interface CreateSettlementInput {
   id?: string | undefined;
@@ -38,16 +39,14 @@ export async function createSettlement(db: Executor, input: CreateSettlementInpu
       version: 1,
     });
 
-    await tx.insert(activityFeed).values(
-      [input.fromUserId, input.toUserId].map((recipientId) => ({
-        recipientId,
-        actorId: input.createdBy,
-        type: "settlement_created" as const,
-        entityType: "settlement",
-        entityId: id,
-        groupId: input.groupId,
-      })),
-    );
+    await writeActivity(tx, {
+      actorId: input.createdBy,
+      type: "settlement_created",
+      entityType: "settlement",
+      entityId: id,
+      groupId: input.groupId,
+      involved: [input.fromUserId, input.toUserId],
+    });
   });
 
   return { id };

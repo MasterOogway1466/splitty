@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   bigserial,
+  date,
   boolean,
   index,
   integer,
@@ -295,7 +296,8 @@ export const expenses = pgTable(
     baseAmountMinor: bigint("base_amount_minor", { mode: "number" }).notNull(),
     fxRate: numeric("fx_rate", { precision: 20, scale: 10 }).notNull(),
     fxRateFetchedAt: timestamp("fx_rate_fetched_at", { withTimezone: true }).notNull(),
-    expenseDate: timestamp("expense_date", { withTimezone: true }).notNull(),
+    // A calendar date, not an instant (§6).
+    expenseDate: date("expense_date", { mode: "string" }).notNull(),
     splitMethod: text("split_method", { enum: splitMethodValues }).notNull(),
     recurringSeriesId: uuid("recurring_series_id").references(() => recurringSeries.id),
     createdBy: uuid("created_by")
@@ -432,6 +434,7 @@ export const activityTypeValues = [
   "expense_created",
   "expense_updated",
   "expense_deleted",
+  "expense_restored",
   "comment_added",
   "settlement_created",
   "settlement_deleted",

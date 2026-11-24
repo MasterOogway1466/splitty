@@ -14,9 +14,8 @@ import type {
   PairwiseBalance,
   Settlement,
   UpdateProfileRequest,
-  UserProfile,
-} from "@splitty/shared";
-import { apiDelete, apiGet, apiPatch, apiPost } from "./api.js";
+  UserProfile, ActivityItem, Category, ExpenseHistoryEntry, UpdateExpenseRequest } from "@splitty/shared";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "./api.js";
 
 /** Adds a client-generated id to each create request. Retrying identical
  * content after a failure reuses the id, so if the first attempt did reach
@@ -36,12 +35,59 @@ export function useGroups(): UseQueryResult<GroupSummary[]> {
   return useQuery({ queryKey: ["groups"], queryFn: () => apiGet("/groups") as Promise<GroupSummary[]> });
 }
 
-export function useGroup(groupId: string): UseQueryResult<GroupDetail> {
-  return useQuery({ queryKey: ["groups", groupId], queryFn: () => apiGet(`/groups/${groupId}`) as Promise<GroupDetail> });
+export function useGroup(groupId: string | null): UseQueryResult<GroupDetail> {
+  return useQuery({
+    queryKey: ["groups", groupId],
+    queryFn: () => apiGet(`/groups/${groupId}`) as Promise<GroupDetail>,
+    enabled: groupId !== null,
+  });
 }
 
-export function useGroupExpenses(groupId: string): UseQueryResult<Expense[]> {
-  return useQuery({ queryKey: ["groups", groupId, "expenses"], queryFn: () => apiGet(`/groups/${groupId}/expenses`) as Promise<Expense[]> });
+export function useGroupExpenses(groupId: string, deleted = false): UseQueryResult<Expense[]> {
+  return useQuery({
+    queryKey: ["groups", groupId, "expenses", { deleted }],
+    queryFn: () => apiGet(`/groups/${groupId}/expenses${deleted ? "?deleted=true" : ""}`) as Promise<Expense[]>,
+  });
+}
+
+export function useExpense(expenseId: string): UseQueryResult<Expense> {
+  return useQuery({ queryKey: ["expenses", expenseId], queryFn: () => apiGet(`/expenses/${expenseId}`) as Promise<Expense> });
+}
+
+export function useExpenseHistory(expenseId: string): UseQueryResult<ExpenseHistoryEntry[]> {
+  return useQuery({
+    queryKey: ["expenses", expenseId, "history"],
+    queryFn: () => apiGet(`/expenses/${expenseId}/history`) as Promise<ExpenseHistoryEntry[]>,
+  });
+}
+
+// Settled either way: a refused change usually means our copy is stale.
+export function useUpdateExpense(expenseId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateExpenseRequest) => apiPut(`/expenses/${expenseId}`, input) as Promise<Expense>,
+    onSettled: () => queryClient.invalidateQueries(),
+  });
+}
+
+export function useSetExpenseDeleted(expenseId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ version, deleted }: { version: number; deleted: boolean }) =>
+      apiPost(`/expenses/${expenseId}/${deleted ? "delete" : "restore"}`, { version }) as Promise<Expense>,
+    onSettled: () => queryClient.invalidateQueries(),
+  });
+}
+
+export function useCategories(): UseQueryResult<Category[]> {
+  return useQuery({ queryKey: ["categories"], queryFn: () => apiGet("/categories") as Promise<Category[]>, staleTime: Infinity });
+}
+
+export function useActivity(groupId?: string): UseQueryResult<ActivityItem[]> {
+  return useQuery({
+    queryKey: groupId ? ["groups", groupId, "activity"] : ["activity"],
+    queryFn: () => apiGet(groupId ? `/groups/${groupId}/activity` : "/activity") as Promise<ActivityItem[]>,
+  });
 }
 
 export function useGroupSettlements(groupId: string): UseQueryResult<Settlement[]> {

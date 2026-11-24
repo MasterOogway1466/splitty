@@ -17,9 +17,11 @@ import {
 import type { Database } from "./db/client.js";
 import type { Env } from "./env.js";
 import {
+  AffectsFormerMemberError,
   AlreadyMemberError,
   DomainError,
   GroupNotFoundError,
+  ExpenseNotFoundError,
   GroupNotSettledError,
   IdConflictError,
   NonzeroBalanceError,
@@ -27,6 +29,7 @@ import {
   NotExpenseParticipantError,
   NotGroupOwnerError,
   NotGroupMemberError,
+  VersionConflictError,
 } from "./groups/errors.js";
 import { GroupService } from "./groups/service.js";
 import { InviteService } from "./invites/service.js";
@@ -34,9 +37,11 @@ import type { Mailer } from "./mail/mailer.js";
 import { registerActivityRoutes } from "./routes/activity.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerBalanceRoutes } from "./routes/balances.js";
+import { registerCategoryRoutes } from "./routes/categories.js";
 import { registerExpenseRoutes } from "./routes/expenses.js";
 import { registerGroupRoutes } from "./routes/groups.js";
 import { registerInviteRoutes } from "./routes/invites.js";
+import { serializeExpense } from "./routes/serializers.js";
 import { registerSettlementRoutes } from "./routes/settlements.js";
 
 export interface BuildAppOptions {
@@ -96,10 +101,10 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     // GroupNotFoundError and NotGroupMemberError deliberately share a
     // status code: a non-member gets the same response whether the group
     // exists or not, so group existence is never leaked to non-members.
-    if (error instanceof GroupNotFoundError || error instanceof NotGroupMemberError || error instanceof NotExpenseParticipantError) {
+    if (error instanceof GroupNotFoundError || error instanceof NotGroupMemberError || error instanceof NotExpenseParticipantError || error instanceof ExpenseNotFoundError) {
       return reply.status(404).send({ error: error.code, message: error.message });
     }
-    if (error instanceof AlreadyMemberError || error instanceof IdConflictError) {
+    if (error instanceof AlreadyMemberError || error instanceof IdConflictError || error instanceof AffectsFormerMemberError) {
       return reply.status(409).send({ error: error.code, message: error.message });
     }
     if (error instanceof NonzeroBalanceError) {
@@ -110,6 +115,14 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     }
     if (error instanceof NotGroupOwnerError || error instanceof NotConnectedError) {
       return reply.status(403).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof VersionConflictError) {
+      return serializeExpense(opts.db, error.current).then((current) =>
+        reply.status(409).send({ error: error.code, message: error.message, current }),
+      );
+    }
+    if (error instanceof DomainError && error.code === "wrong_state") {
+      return reply.status(409).send({ error: error.code, message: error.message });
     }
     if (error instanceof DomainError) {
       return reply.status(400).send({ error: error.code, message: error.message });
@@ -135,6 +148,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   await app.register(registerAuthRoutes, { prefix: "/api/auth" });
   await app.register(registerGroupRoutes, { prefix: "/api/groups" });
   await app.register(registerExpenseRoutes, { prefix: "/api/expenses" });
+  await app.register(registerCategoryRoutes, { prefix: "/api/categories" });
   await app.register(registerSettlementRoutes, { prefix: "/api/settlements" });
   await app.register(registerInviteRoutes, { prefix: "/api/invites" });
   await app.register(registerActivityRoutes, { prefix: "/api/activity" });
