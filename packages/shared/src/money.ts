@@ -71,3 +71,50 @@ export function sumMinor(values: Iterable<number>): MinorUnits {
   for (const v of values) total += v;
   return total;
 }
+
+export interface PairwiseDebt {
+  fromId: string; // owes
+  toId: string; // is owed
+  amountMinor: MinorUnits;
+}
+
+/**
+ * Turns one expense's net positions (paid − owed, summing to zero) into
+ * who-owes-whom (docs/PLAN-PUBLIC.md §7). Debtors are processed in
+ * ascending id; each debt is divided in proportion to the credit each
+ * creditor has *remaining* (largest remainder, ties to the lower id).
+ * Using the remaining rather than original credit is what makes both the
+ * debtors' and the creditors' totals come out exact. BigInt because
+ * debt × credit can exceed 2^53.
+ */
+export function attributeDebts(netById: Map<string, MinorUnits>): PairwiseDebt[] {
+  if (sumMinor(netById.values()) !== 0) {
+    throw new Error("attributeDebts requires net positions that sum to zero");
+  }
+  const byId = [...netById.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  const creditors = byId.filter(([, net]) => net > 0).map(([id, net]) => ({ id, remaining: BigInt(net) }));
+
+  const debts: PairwiseDebt[] = [];
+  for (const [fromId, net] of byId) {
+    if (net >= 0) continue;
+    const debt = BigInt(-net);
+    const totalRemaining = creditors.reduce((sum, c) => sum + c.remaining, 0n);
+    const shares = creditors.map((creditor) => ({
+      creditor,
+      amount: (debt * creditor.remaining) / totalRemaining,
+      remainder: (debt * creditor.remaining) % totalRemaining,
+    }));
+    let leftover = debt - shares.reduce((sum, s) => sum + s.amount, 0n);
+    // Stable sort: equal remainders keep the creditors' ascending-id order.
+    for (const share of [...shares].sort((a, b) => (a.remainder > b.remainder ? -1 : a.remainder < b.remainder ? 1 : 0))) {
+      if (leftover === 0n) break;
+      share.amount += 1n;
+      leftover -= 1n;
+    }
+    for (const { creditor, amount } of shares) {
+      creditor.remaining -= amount;
+      if (amount > 0n) debts.push({ fromId, toId: creditor.id, amountMinor: Number(amount) });
+    }
+  }
+  return debts;
+}

@@ -2,7 +2,7 @@ import { and, eq, inArray, isNull, ne, or } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { PairwiseBalance } from "@splitty/shared";
 import { friendLinks, groupMembers, users } from "../db/schema.js";
-import { computeGlobalBalances, computePairwiseBalances } from "../ledger/balances.js";
+import { computeAllPairwiseBalances, computeGlobalBalances, computePairwiseBalances } from "../ledger/balances.js";
 import { authenticate } from "../plugins/authenticate.js";
 
 export async function registerBalanceRoutes(app: FastifyInstance): Promise<void> {
@@ -17,7 +17,8 @@ export async function registerBalanceRoutes(app: FastifyInstance): Promise<void>
   });
 
   /** Everyone with a running balance context: linked via a shared direct
-   * expense/IOU (friend_links, §6), or a current co-member of any group.
+   * expense/IOU (friend_links, §6), a current co-member of any group, or
+   * anyone with an outstanding balance (e.g. a former co-member).
    * This is what makes writing friend_links on the first direct expense
    * actually useful, rather than a table nothing reads. */
   app.get("/people", async (request) => {
@@ -39,14 +40,17 @@ export async function registerBalanceRoutes(app: FastifyInstance): Promise<void>
           .where(and(inArray(groupMembers.groupId, myGroupIds), isNull(groupMembers.removedAt), ne(groupMembers.userId, userId)))
       : [];
 
-    const peopleIds = [...new Set([...fromLinks, ...coMembers.map((r) => r.userId)])];
+    const pairwise = await computeAllPairwiseBalances(db, userId);
+    const withBalance = [...pairwise].filter(([, net]) => [...net.values()].some((v) => v !== 0)).map(([id]) => id);
+
+    const peopleIds = [...new Set([...fromLinks, ...coMembers.map((r) => r.userId), ...withBalance])];
     if (peopleIds.length === 0) return [];
 
     const peopleRows = await db.select().from(users).where(inArray(users.id, peopleIds));
 
     const result: PairwiseBalance[] = [];
     for (const person of peopleRows) {
-      const balances = await computePairwiseBalances(db, userId, person.id);
+      const balances = pairwise.get(person.id) ?? new Map<string, number>();
       result.push({
         userId: person.id,
         displayName: person.displayName,

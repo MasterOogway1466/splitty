@@ -45,3 +45,27 @@ export function majorToMinor(amountMajor: number, currencyCode: string): number 
   const exponent = minorUnitExponent(currencyCode);
   return Math.round(amountMajor * 10 ** exponent);
 }
+
+/** Parses a money form field into minor units, honoring the currency's own
+ * exponent. Returns NaN for anything that isn't an exact amount in that
+ * currency (e.g. "1.5" JPY) — money input is never silently rounded. */
+export function parseMoneyInput(value: string, currencyCode: string): number {
+  const match = /^(-?)(\d*)(?:\.(\d*))?$/.exec(value.trim());
+  const whole = match?.[2] ?? "";
+  const fraction = match?.[3] ?? "";
+  const exponent = minorUnitExponent(currencyCode);
+  if (!match || whole + fraction === "" || fraction.length > exponent) return NaN;
+  const minor = Number(whole + fraction.padEnd(exponent, "0"));
+  if (!Number.isSafeInteger(minor)) return NaN;
+  return match[1] && minor !== 0 ? -minor : minor;
+}
+
+/** Inverse of parseMoneyInput, for pre-filling a form field. */
+export function formatMoneyInput(amountMinor: number, currencyCode: string): string {
+  return minorToMajor(amountMinor, currencyCode).toFixed(minorUnitExponent(currencyCode));
+}
+
+/** The `step` (and smallest positive amount) for a money `<input>`. */
+export function moneyInputStep(currencyCode: string): string {
+  return formatMoneyInput(1, currencyCode);
+}
