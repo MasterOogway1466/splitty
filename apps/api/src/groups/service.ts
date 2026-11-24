@@ -1,6 +1,7 @@
 import { and, asc, eq, isNotNull, isNull, ne } from "drizzle-orm";
 import type { GroupSummary, GroupDetail, GroupMember, MemberColor } from "@splitty/shared";
-import type { Database } from "../db/client.js";
+import type { Database, Executor } from "../db/client.js";
+import { lockGroup } from "../db/locks.js";
 import { groupMembers, groups, users } from "../db/schema.js";
 import type { Env } from "../env.js";
 import { createInviteLink, reserveInviteSend } from "../invites/send.js";
@@ -54,8 +55,8 @@ export class GroupService {
     if (!(await this.isMember(groupId, userId))) throw new NotGroupMemberError();
   }
 
-  async isMember(groupId: string, userId: string): Promise<boolean> {
-    const [row] = await this.#db
+  async isMember(groupId: string, userId: string, db: Executor = this.#db): Promise<boolean> {
+    const [row] = await db
       .select({ userId: groupMembers.userId })
       .from(groupMembers)
       .innerJoin(groups, eq(groups.id, groupMembers.groupId))
@@ -70,8 +71,8 @@ export class GroupService {
     return !!row;
   }
 
-  async requireGroupCurrency(groupId: string, currency: string): Promise<void> {
-    const [group] = await this.#db.select({ defaultCurrency: groups.defaultCurrency }).from(groups).where(eq(groups.id, groupId));
+  async requireGroupCurrency(groupId: string, currency: string, db: Executor = this.#db): Promise<void> {
+    const [group] = await db.select({ defaultCurrency: groups.defaultCurrency }).from(groups).where(eq(groups.id, groupId));
     if (!group) throw new GroupNotFoundError();
     if (group.defaultCurrency !== currency) throw new CurrencyMismatchError(group.defaultCurrency);
   }
@@ -214,20 +215,22 @@ export class GroupService {
   async removeMember(groupId: string, targetUserId: string, requesterId: string): Promise<void> {
     await this.requireMembership(groupId, requesterId);
 
-    const [target] = await this.#db
-      .select({ role: groupMembers.role })
-      .from(groupMembers)
-      .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, targetUserId), isNull(groupMembers.removedAt)));
-    if (!target) throw new NotGroupMemberError();
-    if (targetUserId !== requesterId) await this.#requireOwner(groupId, requesterId);
-
-    const balances = await computeGroupBalances(this.#db, groupId);
-    const balance = balances.get(targetUserId) ?? 0;
-    if (balance !== 0) {
-      throw new NonzeroBalanceError(balance);
-    }
-
     await this.#db.transaction(async (tx) => {
+      await lockGroup(tx, groupId);
+
+      const [target] = await tx
+        .select({ role: groupMembers.role })
+        .from(groupMembers)
+        .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, targetUserId), isNull(groupMembers.removedAt)));
+      if (!target) throw new NotGroupMemberError();
+      if (targetUserId !== requesterId) await this.#requireOwner(groupId, requesterId, tx);
+
+      const balances = await computeGroupBalances(tx, groupId);
+      const balance = balances.get(targetUserId) ?? 0;
+      if (balance !== 0) {
+        throw new NonzeroBalanceError(balance);
+      }
+
       await tx
         .update(groupMembers)
         .set({ removedAt: new Date() })
@@ -255,8 +258,8 @@ export class GroupService {
     await this.removeMember(groupId, userId, userId);
   }
 
-  async #requireOwner(groupId: string, userId: string): Promise<void> {
-    const [membership] = await this.#db
+  async #requireOwner(groupId: string, userId: string, db: Executor): Promise<void> {
+    const [membership] = await db
       .select({ role: groupMembers.role })
       .from(groupMembers)
       .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, userId), isNull(groupMembers.removedAt)));
@@ -281,16 +284,16 @@ export class GroupService {
    * of who owes whom. Soft-deleted via the existing (previously unused)
    * deletedAt column, same pattern as expenses/settlements. */
   async deleteGroup(groupId: string, requesterId: string): Promise<void> {
-    const [group] = await this.#db.select().from(groups).where(eq(groups.id, groupId));
-    if (!group || group.deletedAt) throw new GroupNotFoundError();
+    await this.#db.transaction(async (tx) => {
+      await lockGroup(tx, groupId);
+      await this.#requireOwner(groupId, requesterId, tx);
 
-    await this.#requireOwner(groupId, requesterId);
+      const balances = await computeGroupBalances(tx, groupId);
+      for (const balance of balances.values()) {
+        if (balance !== 0) throw new GroupNotSettledError();
+      }
 
-    const balances = await computeGroupBalances(this.#db, groupId);
-    for (const balance of balances.values()) {
-      if (balance !== 0) throw new GroupNotSettledError();
-    }
-
-    await this.#db.update(groups).set({ deletedAt: new Date() }).where(eq(groups.id, groupId));
+      await tx.update(groups).set({ deletedAt: new Date() }).where(eq(groups.id, groupId));
+    });
   }
 }

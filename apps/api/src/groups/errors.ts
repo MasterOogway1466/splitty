@@ -52,6 +52,13 @@ export class NotExpenseParticipantError extends DomainError {
   }
 }
 
+/** docs/PLAN-PUBLIC.md §8: this id already belongs to a different entry. */
+export class IdConflictError extends DomainError {
+  constructor() {
+    super("This id has already been used for a different entry", "id_conflict");
+  }
+}
+
 export class NotConnectedError extends DomainError {
   constructor() {
     super("You can only add people you share a group with or have split with before", "not_connected");

@@ -1,10 +1,12 @@
 import { uuidv7 } from "uuidv7";
 import { splitByLargestRemainder, sumMinor, type ExpenseSplit } from "@splitty/shared";
-import type { Database } from "../db/client.js";
+import type { Executor } from "../db/client.js";
 import { activityFeed, expenseEditHistory, expenseParticipants, expensePayers, expenses, friendLinks } from "../db/schema.js";
 import { InvalidSplitError } from "../groups/errors.js";
 
 export interface CreateExpenseInput {
+  id?: string | undefined;
+  requestHash?: string | undefined;
   groupId: string | null;
   description: string;
   notes: string | null;
@@ -61,7 +63,7 @@ export function computeParticipantShares(
       if (sum !== 10000) {
         throw new InvalidSplitError(`percentages sum to ${sum / 100}, expected 100`);
       }
-      const shares = splitByLargestRemainder(amountMinor, split.participants.map((p) => ({ id: p.userId, weight: p.percentage })));
+      const shares = splitByLargestRemainder(amountMinor, split.participants.map((p) => ({ id: p.userId, weight: Math.round(p.percentage * 100) })));
       return split.participants.map((p) => ({
         userId: p.userId,
         owedAmountMinor: shares.get(p.userId) ?? 0,
@@ -69,7 +71,7 @@ export function computeParticipantShares(
       }));
     }
     case "shares": {
-      const shares = splitByLargestRemainder(amountMinor, split.participants.map((p) => ({ id: p.userId, weight: p.shares })));
+      const shares = splitByLargestRemainder(amountMinor, split.participants.map((p) => ({ id: p.userId, weight: Math.round(p.shares * 100) })));
       return split.participants.map((p) => ({
         userId: p.userId,
         owedAmountMinor: shares.get(p.userId) ?? 0,
@@ -102,12 +104,9 @@ export function computeParticipantShares(
   }
 }
 
-/** docs/PLAN-PUBLIC.md §8: `id` is client-generated UUIDv7 — generated
- * here (server-side) for now since Phase 1 has no offline-capable client
- * yet (that's Phase 5); when it exists, the client generates this
- * instead and the rest of this shape is unchanged. */
-export async function createExpense(db: Database, input: CreateExpenseInput): Promise<{ id: string }> {
-  const id = uuidv7();
+/** docs/PLAN-PUBLIC.md §8: `id` is a UUIDv7, the client's if it sent one. */
+export async function createExpense(db: Executor, input: CreateExpenseInput): Promise<{ id: string }> {
+  const id = input.id ?? uuidv7();
   const now = new Date();
 
   const payersTotal = sumMinor(input.payers.map((p) => p.amountMinor));
@@ -147,6 +146,7 @@ export async function createExpense(db: Database, input: CreateExpenseInput): Pr
       expenseDate: input.expenseDate,
       splitMethod: input.split.splitMethod,
       createdBy: input.createdBy,
+      requestHash: input.requestHash ?? null,
       version: 1,
       createdAt: now,
       updatedAt: now,

@@ -1,8 +1,12 @@
-import { drizzle } from "drizzle-orm/postgres-js";
+import type { PgDatabase } from "drizzle-orm/pg-core";
+import { drizzle, type PostgresJsQueryResultHKT } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema.js";
 
 export type Database = ReturnType<typeof drizzle<typeof schema>>;
+
+/** The database or an open transaction on it. */
+export type Executor = PgDatabase<PostgresJsQueryResultHKT, typeof schema>;
 
 export function createDb(databaseUrl: string): { db: Database; close: () => Promise<void> } {
   const client = postgres(databaseUrl, { max: 10 });

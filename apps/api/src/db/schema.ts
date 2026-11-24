@@ -301,6 +301,8 @@ export const expenses = pgTable(
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id),
+    // Hash of the create request, to recognize a retry of it (§8).
+    requestHash: text("request_hash"),
     version: integer("version").notNull().default(1),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
@@ -414,6 +416,8 @@ export const settlements = pgTable(
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id),
+    // Hash of the create request, to recognize a retry of it (§8).
+    requestHash: text("request_hash"),
     version: integer("version").notNull().default(1),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },

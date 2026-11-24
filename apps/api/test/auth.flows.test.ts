@@ -1,4 +1,7 @@
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { users } from "../src/db/schema.js";
+import { issueRefreshToken } from "../src/auth/tokens.js";
 import { createTestContext, truncateAllTestTables, type TestContext } from "./setup.js";
 
 function extractToken(text: string): string {
@@ -184,6 +187,37 @@ describe("auth flows (docs/PLAN-PUBLIC.md §12)", () => {
       cookies: { refresh_token: oldRefreshCookie.value },
     });
     expect(refreshOldSession.statusCode).toBe(401);
+  });
+
+  it("a session being issued while a password reset lands does not survive it", async () => {
+    const { userId } = (
+      await ctx.app.inject({ method: "POST", url: "/api/auth/signup", payload: { email: "race@example.com", password: "password123", displayName: "R" } })
+    ).json();
+    const before = (await ctx.app.authService.getUserById(userId))!; // as read when the old password was checked
+    await ctx.app.inject({ method: "POST", url: "/api/auth/request-password-reset", payload: { email: "race@example.com" } });
+    const token = extractToken(ctx.mailer.sent.at(-1)!.text);
+    await ctx.app.inject({ method: "POST", url: "/api/auth/confirm-password-reset", payload: { token, newPassword: "new-password-1" } });
+    await expect(issueRefreshToken(ctx.db, before, 30)).rejects.toThrow();
+  });
+
+  it("a refresh token presented several times at once is only rotated once", async () => {
+    await ctx.app.inject({ method: "POST", url: "/api/auth/signup", payload: { email: "rot@example.com", password: "password123", displayName: "R" } });
+    const login = await ctx.app.inject({ method: "POST", url: "/api/auth/login", payload: { email: "rot@example.com", password: "password123" } });
+    const value = login.cookies.find((c) => c.name === "refresh_token")!.value;
+    // Holding the user row makes every request read the token as still
+    // valid before any of them gets to rotate it.
+    let pending!: Promise<number[]>;
+    await ctx.db.transaction(async (tx) => {
+      await tx.select().from(users).where(eq(users.email, "rot@example.com")).for("update");
+      pending = Promise.all(
+        Array.from({ length: 4 }, () =>
+          ctx.app.inject({ method: "POST", url: "/api/auth/refresh", cookies: { refresh_token: value } }).then((r) => r.statusCode),
+        ),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+    const codes = await pending;
+    expect(codes.sort()).toEqual([200, 401, 401, 401]);
   });
 
   it("password-reset-request never reveals whether the email exists", async () => {

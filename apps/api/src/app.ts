@@ -21,6 +21,7 @@ import {
   DomainError,
   GroupNotFoundError,
   GroupNotSettledError,
+  IdConflictError,
   NonzeroBalanceError,
   NotConnectedError,
   NotExpenseParticipantError,
@@ -98,7 +99,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     if (error instanceof GroupNotFoundError || error instanceof NotGroupMemberError || error instanceof NotExpenseParticipantError) {
       return reply.status(404).send({ error: error.code, message: error.message });
     }
-    if (error instanceof AlreadyMemberError) {
+    if (error instanceof AlreadyMemberError || error instanceof IdConflictError) {
       return reply.status(409).send({ error: error.code, message: error.message });
     }
     if (error instanceof NonzeroBalanceError) {

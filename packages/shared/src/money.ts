@@ -15,7 +15,7 @@ export function assertMinorUnits(value: number, label = "amount"): MinorUnits {
 }
 
 /** Upper bound on any single entered amount. Far above real use, and low
- * enough that `total × weight` and sums over thousands of entries stay
+ * enough that sums over thousands of entries stay
  * within Number.MAX_SAFE_INTEGER, where this arithmetic is exact. */
 export const MAX_AMOUNT_MINOR = 1_000_000_000_000;
 export const MAX_SHARES = 1_000;
@@ -28,7 +28,7 @@ export interface WeightedParticipant {
 /**
  * Splits `totalMinor` across participants proportional to `weight`
  * (equal split: all weights equal; shares split: weight = share count;
- * percentage split: weight = percentage). Uses the largest-remainder
+ * percentage split: weight = percentage), as integers. Uses the largest-remainder
  * method with a deterministic tie-break on ascending participant id, per
  * docs/PLAN-PUBLIC.md §2 — fully reproducible from stored data alone, which
  * matters because edit history and offline replay both recompute this.
@@ -45,22 +45,26 @@ export function splitByLargestRemainder(
   if (ids.size !== participants.length) {
     throw new Error("splitByLargestRemainder requires unique participant ids");
   }
-  const totalWeight = participants.reduce((sum, p) => sum + p.weight, 0);
-  if (!(totalWeight > 0)) {
+  if (participants.some((p) => !Number.isSafeInteger(p.weight) || p.weight < 0)) {
+    throw new Error("splitByLargestRemainder requires non-negative integer weights");
+  }
+  // BigInt because total × weight can exceed 2^53.
+  const total = BigInt(totalMinor);
+  const totalWeight = participants.reduce((sum, p) => sum + BigInt(p.weight), 0n);
+  if (totalWeight === 0n) {
     throw new Error("splitByLargestRemainder requires a positive total weight");
   }
 
   const withRemainders = participants.map((p) => {
-    const exact = (totalMinor * p.weight) / totalWeight;
-    const floor = Math.floor(exact);
-    return { id: p.id, floor, remainder: exact - floor };
+    const product = total * BigInt(p.weight);
+    return { id: p.id, floor: Number(product / totalWeight), remainder: product % totalWeight };
   });
 
   const allocated = withRemainders.reduce((sum, p) => sum + p.floor, 0);
   const remaining = totalMinor - allocated;
 
   const byRemainderDesc = [...withRemainders].sort((a, b) => {
-    if (b.remainder !== a.remainder) return b.remainder - a.remainder;
+    if (b.remainder !== a.remainder) return b.remainder > a.remainder ? 1 : -1;
     return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
   });
 

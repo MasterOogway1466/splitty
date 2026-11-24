@@ -1,6 +1,6 @@
 import { and, eq, exists, inArray, isNull, or, sql } from "drizzle-orm";
 import { attributeDebts } from "@splitty/shared";
-import type { Database } from "../db/client.js";
+import type { Executor } from "../db/client.js";
 import { expenseParticipants, expensePayers, expenses, settlements } from "../db/schema.js";
 
 /**
@@ -30,7 +30,7 @@ export type CurrencyBalanceMap = Map<string, number>; // currency -> net minor u
 
 /** Net position (paid − owed, settlement-adjusted) per member, within one
  * group. Positive = the group owes them; negative = they owe the group. */
-export async function computeGroupBalances(db: Database, groupId: string): Promise<BalanceMap> {
+export async function computeGroupBalances(db: Executor, groupId: string): Promise<BalanceMap> {
   const balances: BalanceMap = new Map();
   const add = (userId: string, delta: number) => balances.set(userId, (balances.get(userId) ?? 0) + delta);
 
@@ -72,13 +72,13 @@ export async function computeGroupBalances(db: Database, groupId: string): Promi
  * Expenses are attributed through `attributeDebts` (§7), so a person's
  * pairwise balances always sum to their global balance.
  */
-export async function computePairwiseBalances(db: Database, userId: string, otherUserId: string): Promise<CurrencyBalanceMap> {
+export async function computePairwiseBalances(db: Executor, userId: string, otherUserId: string): Promise<CurrencyBalanceMap> {
   return (await computeAllPairwiseBalances(db, userId)).get(otherUserId) ?? new Map();
 }
 
 /** computePairwiseBalances against every counterparty at once, keyed by
  * their user id. */
-export async function computeAllPairwiseBalances(db: Database, userId: string): Promise<Map<string, CurrencyBalanceMap>> {
+export async function computeAllPairwiseBalances(db: Executor, userId: string): Promise<Map<string, CurrencyBalanceMap>> {
   const result = new Map<string, CurrencyBalanceMap>();
   const add = (otherUserId: string, currency: string, delta: number) => {
     const net = result.get(otherUserId) ?? new Map<string, number>();
@@ -141,7 +141,7 @@ export async function computeAllPairwiseBalances(db: Database, userId: string): 
 /** Global net position for one user across every group and direct expense
  * they're part of, per currency — the "you owe / you're owed" dashboard
  * summary from docs/PLAN-PUBLIC.md §1. */
-export async function computeGlobalBalances(db: Database, userId: string): Promise<CurrencyBalanceMap> {
+export async function computeGlobalBalances(db: Executor, userId: string): Promise<CurrencyBalanceMap> {
   const net: CurrencyBalanceMap = new Map();
   const add = (currency: string, delta: number) => net.set(currency, (net.get(currency) ?? 0) + delta);
 

@@ -9,10 +9,9 @@ import {
 } from "@splitty/shared";
 import { checkAndRecordRateLimit } from "../auth/rateLimit.js";
 import { activityFeed, expenses, settlements, users } from "../db/schema.js";
-import { NotGroupMemberError } from "../groups/errors.js";
-import { createExpense, participantUserIdsOf } from "../ledger/expenses.js";
-import { createSettlement } from "../ledger/settlements.js";
+import { recordExpense, recordSettlement } from "../ledger/record.js";
 import { authenticateVerified } from "../plugins/authenticate.js";
+import { uuidParam } from "./params.js";
 import { serializeExpense, serializeSettlement } from "./serializers.js";
 
 // docs/PLAN-PUBLIC.md §5 Phase 0 requirement, actually applicable from
@@ -44,12 +43,12 @@ export async function registerGroupRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get("/:groupId", async (request) => {
-    const { groupId } = request.params as { groupId: string };
+    const groupId = uuidParam(request, "groupId");
     return groupService.getGroupDetail(groupId, request.currentUser!.id);
   });
 
   app.post("/:groupId/members", async (request, reply) => {
-    const { groupId } = request.params as { groupId: string };
+    const groupId = uuidParam(request, "groupId");
     const rl = await checkAndRecordRateLimit(db, "member_add", request.currentUser!.id, MEMBER_ADD_CAP);
     if (!rl.allowed) return reply.status(429).send({ error: "rate_limited", message: "Too many members added today" });
 
@@ -59,32 +58,33 @@ export async function registerGroupRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.delete("/:groupId/members/:userId", async (request, reply) => {
-    const { groupId, userId } = request.params as { groupId: string; userId: string };
+    const groupId = uuidParam(request, "groupId");
+    const userId = uuidParam(request, "userId");
     await groupService.removeMember(groupId, userId, request.currentUser!.id);
     reply.status(204).send();
   });
 
   app.post("/:groupId/leave", async (request, reply) => {
-    const { groupId } = request.params as { groupId: string };
+    const groupId = uuidParam(request, "groupId");
     await groupService.leaveGroup(groupId, request.currentUser!.id);
     reply.status(204).send();
   });
 
   app.patch("/:groupId/color", async (request, reply) => {
-    const { groupId } = request.params as { groupId: string };
+    const groupId = uuidParam(request, "groupId");
     const body = setMemberColorRequestSchema.parse(request.body);
     await groupService.setMemberColor(groupId, request.currentUser!.id, body.color);
     reply.status(204).send();
   });
 
   app.delete("/:groupId", async (request, reply) => {
-    const { groupId } = request.params as { groupId: string };
+    const groupId = uuidParam(request, "groupId");
     await groupService.deleteGroup(groupId, request.currentUser!.id);
     reply.status(204).send();
   });
 
   app.get("/:groupId/expenses", async (request) => {
-    const { groupId } = request.params as { groupId: string };
+    const groupId = uuidParam(request, "groupId");
     await groupService.requireMembership(groupId, request.currentUser!.id);
 
     const rows = await db
@@ -96,7 +96,7 @@ export async function registerGroupRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post("/:groupId/expenses", async (request, reply) => {
-    const { groupId } = request.params as { groupId: string };
+    const groupId = uuidParam(request, "groupId");
     const userId = request.currentUser!.id;
     await groupService.requireMembership(groupId, userId);
 
@@ -104,35 +104,13 @@ export async function registerGroupRoutes(app: FastifyInstance): Promise<void> {
     if (!rl.allowed) return reply.status(429).send({ error: "rate_limited", message: "Too many expenses created today" });
 
     const body = createExpenseRequestSchema.parse(request.body);
-    await groupService.requireGroupCurrency(groupId, body.currency);
-    // Every payer and participant must actually be a current member of
-    // this group — the isolation boundary applies to who an expense can
-    // involve, not just who can create one.
-    for (const memberId of new Set([...body.payers.map((p) => p.userId), ...participantUserIdsOf(body)])) {
-      if (!(await groupService.isMember(groupId, memberId))) {
-        throw new NotGroupMemberError();
-      }
-    }
-
-    const { id } = await createExpense(db, {
-      groupId,
-      description: body.description,
-      notes: body.notes ?? null,
-      amountMinor: body.amountMinor,
-      currency: body.currency,
-      categoryId: body.categoryId ?? null,
-      expenseDate: body.expenseDate ? new Date(body.expenseDate) : new Date(),
-      payers: body.payers,
-      split: body,
-      createdBy: userId,
-    });
-    const [row] = await db.select().from(expenses).where(eq(expenses.id, id));
-    reply.status(201);
-    return serializeExpense(db, row!);
+    const { row, created } = await recordExpense(db, groupService, { groupId, userId, body });
+    reply.status(created ? 201 : 200);
+    return serializeExpense(db, row);
   });
 
   app.get("/:groupId/settlements", async (request) => {
-    const { groupId } = request.params as { groupId: string };
+    const groupId = uuidParam(request, "groupId");
     await groupService.requireMembership(groupId, request.currentUser!.id);
 
     const rows = await db
@@ -144,7 +122,7 @@ export async function registerGroupRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post("/:groupId/settlements", async (request, reply) => {
-    const { groupId } = request.params as { groupId: string };
+    const groupId = uuidParam(request, "groupId");
     const userId = request.currentUser!.id;
     await groupService.requireMembership(groupId, userId);
 
@@ -152,31 +130,13 @@ export async function registerGroupRoutes(app: FastifyInstance): Promise<void> {
     if (!rl.allowed) return reply.status(429).send({ error: "rate_limited", message: "Too many settlements recorded today" });
 
     const body = createSettlementRequestSchema.parse(request.body);
-    await groupService.requireGroupCurrency(groupId, body.currency);
-    for (const memberId of [body.fromUserId, body.toUserId]) {
-      if (!(await groupService.isMember(groupId, memberId))) {
-        throw new NotGroupMemberError();
-      }
-    }
-
-    const { id } = await createSettlement(db, {
-      groupId,
-      fromUserId: body.fromUserId,
-      toUserId: body.toUserId,
-      amountMinor: body.amountMinor,
-      currency: body.currency,
-      method: body.method,
-      note: body.note ?? null,
-      settledAt: body.settledAt ? new Date(body.settledAt) : new Date(),
-      createdBy: userId,
-    });
-    const [row] = await db.select().from(settlements).where(eq(settlements.id, id));
-    reply.status(201);
-    return serializeSettlement(row!);
+    const { row, created } = await recordSettlement(db, groupService, { groupId, userId, body });
+    reply.status(created ? 201 : 200);
+    return serializeSettlement(row);
   });
 
   app.get("/:groupId/activity", async (request) => {
-    const { groupId } = request.params as { groupId: string };
+    const groupId = uuidParam(request, "groupId");
     const userId = request.currentUser!.id;
     await groupService.requireMembership(groupId, userId);
 
