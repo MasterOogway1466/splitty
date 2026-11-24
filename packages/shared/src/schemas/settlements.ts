@@ -1,12 +1,13 @@
 import { z } from "zod";
 import { CURRENCY_CODES } from "../currency.js";
+import { MAX_AMOUNT_MINOR } from "../money.js";
 
 export const settlementMethodValues = ["cash", "bank_transfer", "upi", "other"] as const;
 
 export const createSettlementRequestSchema = z.object({
   fromUserId: z.string().uuid(),
   toUserId: z.string().uuid(),
-  amountMinor: z.number().int().positive(),
+  amountMinor: z.number().int().positive().max(MAX_AMOUNT_MINOR),
   currency: z.enum(CURRENCY_CODES),
   method: z.enum(settlementMethodValues).default("other"),
   note: z.string().trim().max(500).optional(),

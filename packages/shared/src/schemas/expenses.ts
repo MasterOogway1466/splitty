@@ -1,27 +1,30 @@
 import { z } from "zod";
 import { CURRENCY_CODES } from "../currency.js";
+import { MAX_AMOUNT_MINOR, MAX_SHARES } from "../money.js";
 
-const payerSchema = z.object({ userId: z.string().uuid(), amountMinor: z.number().int().positive() });
+const MAX_PEOPLE = 500;
+
+const payerSchema = z.object({ userId: z.string().uuid(), amountMinor: z.number().int().positive().max(MAX_AMOUNT_MINOR) });
 
 const equalSplitSchema = z.object({
   splitMethod: z.literal("equal"),
-  participantUserIds: z.array(z.string().uuid()).min(1),
+  participantUserIds: z.array(z.string().uuid()).min(1).max(MAX_PEOPLE),
 });
 const exactSplitSchema = z.object({
   splitMethod: z.literal("exact"),
-  participants: z.array(z.object({ userId: z.string().uuid(), amountMinor: z.number().int().positive() })).min(1),
+  participants: z.array(z.object({ userId: z.string().uuid(), amountMinor: z.number().int().positive().max(MAX_AMOUNT_MINOR) })).min(1).max(MAX_PEOPLE),
 });
 const percentageSplitSchema = z.object({
   splitMethod: z.literal("percentage"),
-  participants: z.array(z.object({ userId: z.string().uuid(), percentage: z.number().positive() })).min(1),
+  participants: z.array(z.object({ userId: z.string().uuid(), percentage: z.number().positive().max(100) })).min(1).max(MAX_PEOPLE),
 });
 const sharesSplitSchema = z.object({
   splitMethod: z.literal("shares"),
-  participants: z.array(z.object({ userId: z.string().uuid(), shares: z.number().positive() })).min(1),
+  participants: z.array(z.object({ userId: z.string().uuid(), shares: z.number().positive().max(MAX_SHARES) })).min(1).max(MAX_PEOPLE),
 });
 const adjustmentSplitSchema = z.object({
   splitMethod: z.literal("adjustment"),
-  participants: z.array(z.object({ userId: z.string().uuid(), adjustmentMinor: z.number().int() })).min(1),
+  participants: z.array(z.object({ userId: z.string().uuid(), adjustmentMinor: z.number().int().min(-MAX_AMOUNT_MINOR).max(MAX_AMOUNT_MINOR) })).min(1).max(MAX_PEOPLE),
 });
 
 // Phase 2 scope: equal/exact/percentage/shares/adjustment. Itemized
@@ -40,11 +43,11 @@ export const createExpenseRequestSchema = z
   .object({
     description: z.string().trim().min(1).max(200),
     notes: z.string().trim().max(2000).optional(),
-    amountMinor: z.number().int().positive(),
+    amountMinor: z.number().int().positive().max(MAX_AMOUNT_MINOR),
     currency: z.enum(CURRENCY_CODES),
     categoryId: z.string().uuid().nullable().optional(),
     expenseDate: z.string().datetime().optional(), // defaults to now if omitted
-    payers: z.array(payerSchema).min(1),
+    payers: z.array(payerSchema).min(1).max(MAX_PEOPLE),
   })
   .and(splitSchema);
 export type CreateExpenseRequest = z.infer<typeof createExpenseRequestSchema>;

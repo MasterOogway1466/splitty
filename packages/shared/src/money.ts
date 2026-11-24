@@ -14,6 +14,12 @@ export function assertMinorUnits(value: number, label = "amount"): MinorUnits {
   return value;
 }
 
+/** Upper bound on any single entered amount. Far above real use, and low
+ * enough that `total × weight` and sums over thousands of entries stay
+ * within Number.MAX_SAFE_INTEGER, where this arithmetic is exact. */
+export const MAX_AMOUNT_MINOR = 1_000_000_000_000;
+export const MAX_SHARES = 1_000;
+
 export interface WeightedParticipant {
   id: string;
   weight: number;
