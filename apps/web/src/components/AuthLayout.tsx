@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 
 export function AuthLayout({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -30,20 +30,35 @@ export function TextField(props: {
   autoComplete?: string;
   required?: boolean;
   minLength?: number;
+  onBlur?: () => void;
+  error?: string | null;
 }) {
+  const errorId = useId();
   return (
-    <label className="block">
-      <span className="block text-sm font-medium text-ink mb-1">{props.label}</span>
-      <input
-        type={props.type ?? "text"}
-        value={props.value}
-        onChange={(e) => props.onChange(e.target.value)}
-        autoComplete={props.autoComplete}
-        required={props.required}
-        minLength={props.minLength}
-        className="w-full rounded-md border border-line px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-ledger/40 focus:border-ledger"
-      />
-    </label>
+    <div>
+      <label className="block">
+        <span className="block text-sm font-medium text-ink mb-1">{props.label}</span>
+        <input
+          type={props.type ?? "text"}
+          value={props.value}
+          onChange={(e) => props.onChange(e.target.value)}
+          onBlur={props.onBlur}
+          autoComplete={props.autoComplete}
+          required={props.required}
+          minLength={props.minLength}
+          aria-invalid={props.error ? true : undefined}
+          aria-describedby={props.error ? errorId : undefined}
+          className={`w-full rounded-md border px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 ${
+            props.error ? "border-rust focus:ring-rust/40 focus:border-rust" : "border-line focus:ring-ledger/40 focus:border-ledger"
+          }`}
+        />
+      </label>
+      {props.error && (
+        <p id={errorId} role="alert" className="mt-1 text-sm text-rust">
+          {props.error}
+        </p>
+      )}
+    </div>
   );
 }
 
