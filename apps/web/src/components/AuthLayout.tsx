@@ -1,4 +1,5 @@
 import { useId, type ReactNode } from "react";
+import { Button } from "./Button.js";
 
 export function AuthLayout({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -48,8 +49,8 @@ export function TextField(props: {
           minLength={props.minLength}
           aria-invalid={props.error ? true : undefined}
           aria-describedby={props.error ? errorId : undefined}
-          className={`w-full rounded-md border px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 ${
-            props.error ? "border-rust focus:ring-rust/40 focus:border-rust" : "border-line focus:ring-ledger/40 focus:border-ledger"
+          className={`w-full rounded-md border bg-white px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 ${
+            props.error ? "border-rust focus:ring-rust/40 focus:border-rust" : "border-edge focus:ring-ledger/40 focus:border-ledger"
           }`}
         />
       </label>
@@ -64,12 +65,8 @@ export function TextField(props: {
 
 export function SubmitButton({ children, disabled }: { children: ReactNode; disabled?: boolean }) {
   return (
-    <button
-      type="submit"
-      disabled={disabled}
-      className="w-full rounded-md bg-ledger text-paper text-sm font-medium py-2 hover:bg-ledger-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-    >
+    <Button type="submit" variant="primary" size="md" disabled={disabled} className="w-full">
       {children}
-    </button>
+    </Button>
   );
 }
