@@ -1,6 +1,8 @@
 import { inArray } from "drizzle-orm";
 import type { Expense, ExpenseHistoryEntry, ExpenseSnapshot, Settlement, SettlementHistoryEntry, ShareInput } from "@splitty/shared";
 import type { Database } from "../db/client.js";
+import { groupBy } from "../groupBy.js";
+import { readItemizations } from "../ledger/items.js";
 import type { readSettlementHistory } from "../ledger/settlementLifecycle.js";
 import type { readHistory } from "../ledger/lifecycle.js";
 import { expenseParticipants, expensePayers, expenses, settlements, users } from "../db/schema.js";
@@ -15,12 +17,6 @@ async function displayNames(db: Database, userIds: Iterable<string>): Promise<(i
   return (id) => names.get(id) ?? "Unknown";
 }
 
-function byExpense<Row extends { expenseId: string }>(rows: Row[]): Map<string, Row[]> {
-  const result = new Map<string, Row[]>();
-  for (const row of rows) result.set(row.expenseId, [...(result.get(row.expenseId) ?? []), row]);
-  return result;
-}
-
 export async function serializeExpenses(db: Database, rows: ExpenseRow[]): Promise<Expense[]> {
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.id);
@@ -31,8 +27,9 @@ export async function serializeExpenses(db: Database, rows: ExpenseRow[]): Promi
     .where(inArray(expenseParticipants.expenseId, ids))
     .orderBy(expenseParticipants.userId);
   const nameOf = await displayNames(db, [...payerRows, ...participantRows].map((p) => p.userId));
-  const payersOf = byExpense(payerRows);
-  const participantsOf = byExpense(participantRows);
+  const itemizations = await readItemizations(db, rows);
+  const payersOf = groupBy(payerRows, (p) => p.expenseId);
+  const participantsOf = groupBy(participantRows, (p) => p.expenseId);
 
   return rows.map((row) => ({
     id: row.id,
@@ -52,6 +49,7 @@ export async function serializeExpenses(db: Database, rows: ExpenseRow[]): Promi
       owedAmountMinor: p.owedAmountMinor,
       shareInput: (p.shareInput ?? null) as ShareInput | null,
     })),
+    itemization: itemizations.get(row.id) ?? null,
     createdAt: row.createdAt.toISOString(),
     version: row.version,
     deletedAt: row.deletedAt?.toISOString() ?? null,
@@ -94,6 +92,7 @@ export async function serializeHistory(db: Database, entries: Awaited<ReturnType
     snapshot
       ? {
           ...snapshot,
+          itemization: snapshot.itemization ?? null,
           payers: snapshot.payers.map((p) => ({ ...p, displayName: nameOf(p.userId) })),
           participants: snapshot.participants.map((p) => ({
             ...p,

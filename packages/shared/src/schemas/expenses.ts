@@ -30,15 +30,34 @@ const adjustmentSplitSchema = z.object({
   participants: z.array(z.object({ userId: z.string().uuid(), adjustmentMinor: z.number().int().min(-MAX_AMOUNT_MINOR).max(MAX_AMOUNT_MINOR) })).min(1).max(MAX_PEOPLE),
 });
 
-// Phase 2 scope: equal/exact/percentage/shares/adjustment. Itemized
-// exists in the DB enum (apps/api/src/db/schema.ts) but has no request
-// shape here yet — it needs its own line-items UI (deferred).
+const lineItemSchema = z.object({
+  description: z.string().trim().min(1).max(200),
+  amountMinor: z.number().int().positive().max(MAX_AMOUNT_MINOR),
+  assignments: z.array(z.object({ userId: z.string().uuid(), shares: hundredthsSchema(MAX_SHARES) })).min(1).max(100),
+});
+const itemizationSchema = z.object({
+  items: z.array(lineItemSchema).min(1).max(100),
+  // Spread over people in proportion to their items.
+  taxMinor: z.number().int().min(0).max(MAX_AMOUNT_MINOR).default(0),
+  tipMinor: z.number().int().min(0).max(MAX_AMOUNT_MINOR).default(0),
+});
+export type Itemization = z.infer<typeof itemizationSchema>;
+const MAX_ASSIGNMENTS = 500;
+const itemizedSplitSchema = itemizationSchema.extend({
+  splitMethod: z.literal("itemized"),
+  items: itemizationSchema.shape.items.refine(
+    (items) => items.reduce((sum, i) => sum + i.assignments.length, 0) <= MAX_ASSIGNMENTS,
+    `At most ${MAX_ASSIGNMENTS} item assignments`,
+  ),
+});
+
 export const splitSchema = z.discriminatedUnion("splitMethod", [
   equalSplitSchema,
   exactSplitSchema,
   percentageSplitSchema,
   sharesSplitSchema,
   adjustmentSplitSchema,
+  itemizedSplitSchema,
 ]);
 export type ExpenseSplit = z.infer<typeof splitSchema>;
 
@@ -68,6 +87,8 @@ export const shareInputSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("percentage"), percentage: z.number() }),
   z.object({ type: z.literal("shares"), shares: z.number() }),
   z.object({ type: z.literal("adjustment"), adjustmentMinor: z.number().int() }),
+  // What their items came to, before tax and tip.
+  z.object({ type: z.literal("itemized"), subtotalMinor: z.number().int() }),
 ]);
 export type ShareInput = z.infer<typeof shareInputSchema>;
 
@@ -97,6 +118,7 @@ export const expenseSchema = z.object({
   createdBy: z.string().uuid(),
   payers: z.array(expensePayerSchema),
   participants: z.array(expenseParticipantSchema),
+  itemization: itemizationSchema.nullable(),
   createdAt: z.string(),
   version: z.number().int(),
   deletedAt: z.string().nullable(),
@@ -113,6 +135,7 @@ export const expenseSnapshotSchema = expenseSchema.pick({
   expenseDate: true,
   payers: true,
   participants: true,
+  itemization: true,
 });
 export type ExpenseSnapshot = z.infer<typeof expenseSnapshotSchema>;
 
@@ -135,3 +158,19 @@ export const categorySchema = z.object({
   icon: z.string().nullable(),
 });
 export type Category = z.infer<typeof categorySchema>;
+
+export const createCommentRequestSchema = z.object({
+  id: uuidv7Schema.optional(),
+  body: z.string().trim().min(1).max(2000),
+});
+export type CreateCommentRequest = z.infer<typeof createCommentRequestSchema>;
+
+export const commentSchema = z.object({
+  id: z.string().uuid(),
+  expenseId: z.string().uuid(),
+  userId: z.string().uuid(),
+  displayName: z.string(),
+  body: z.string(),
+  createdAt: z.string(),
+});
+export type Comment = z.infer<typeof commentSchema>;

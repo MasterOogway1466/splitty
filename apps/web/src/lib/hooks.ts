@@ -4,6 +4,8 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type UseQueryR
 import type {
   ActivityItem,
   Category,
+  Comment,
+  CreateCommentRequest,
   CreateExpenseRequest,
   CreateGroupRequest,
   CreateSettlementRequest,
@@ -110,6 +112,27 @@ export function useExpenses(scope: ListScope, deleted = false) {
 
 export function useSettlements(scope: ListScope, deleted = false) {
   return useEntries<Settlement>("settlements", scope, deleted);
+}
+
+export function useComments(expenseId: string): UseQueryResult<Comment[]> {
+  return useQuery({
+    queryKey: ["expenses", expenseId, "comments"],
+    queryFn: () => apiGet(`/expenses/${expenseId}/comments`) as Promise<Comment[]>,
+  });
+}
+
+export function useAddComment(expenseId: string) {
+  const queryClient = useQueryClient();
+  const create = useRetryableCreate((input: CreateCommentRequest) => apiPost(`/expenses/${expenseId}/comments`, input) as Promise<Comment>);
+  return useMutation({ mutationFn: (input: CreateCommentRequest) => create(input), onSuccess: () => queryClient.invalidateQueries() });
+}
+
+export function useDeleteComment(expenseId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (commentId: string) => apiDelete(`/expenses/${expenseId}/comments/${commentId}`),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["expenses", expenseId, "comments"] }),
+  });
 }
 
 export function useGroupDebts(groupId: string): UseQueryResult<GroupDebts> {

@@ -299,6 +299,9 @@ export const expenses = pgTable(
     // A calendar date, not an instant (§6).
     expenseDate: date("expense_date", { mode: "string" }).notNull(),
     splitMethod: text("split_method", { enum: splitMethodValues }).notNull(),
+    // Itemized splits only; the items are in expense_line_items.
+    taxMinor: bigint("tax_minor", { mode: "number" }).notNull().default(0),
+    tipMinor: bigint("tip_minor", { mode: "number" }).notNull().default(0),
     recurringSeriesId: uuid("recurring_series_id").references(() => recurringSeries.id),
     createdBy: uuid("created_by")
       .notNull()
@@ -349,7 +352,8 @@ export const expenseLineItems = pgTable("expense_line_items", {
     .references(() => expenses.id),
   description: text("description").notNull(),
   amountMinor: bigint("amount_minor", { mode: "number" }).notNull(),
-});
+  position: integer("position").notNull().default(0),
+}, (table) => [index("expense_line_items_expense_idx").on(table.expenseId)]);
 
 export const expenseLineItemAssignments = pgTable(
   "expense_line_item_assignments",
@@ -376,7 +380,7 @@ export const expenseComments = pgTable("expense_comments", {
   body: text("body").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
-});
+}, (table) => [index("expense_comments_expense_idx").on(table.expenseId)]);
 
 export const expenseEditHistory = pgTable("expense_edit_history", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),

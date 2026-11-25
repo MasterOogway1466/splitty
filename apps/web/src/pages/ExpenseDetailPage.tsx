@@ -10,6 +10,7 @@ import {
   type ShareInput,
 } from "@splitty/shared";
 import { AppShell } from "../components/AppShell.js";
+import { CommentsSection } from "../components/CommentsSection.js";
 import { ExpenseForm } from "../components/ExpenseForm.js";
 import { cardClass, linkButtonClass } from "../components/styles.js";
 import { ApiError } from "../lib/api.js";
@@ -44,6 +45,14 @@ function changesBetween(before: ExpenseSnapshot, after: ExpenseSnapshot, categor
   const payers = (s: ExpenseSnapshot) => s.payers.map((p) => `${p.displayName} ${formatMoney(p.amountMinor, s.currency)}`).join(", ");
   const split = (s: ExpenseSnapshot) =>
     s.participants.map((p) => `${p.displayName} ${formatMoney(p.owedAmountMinor, s.currency)}${shareNote(p.shareInput, s.currency)}`).join(", ");
+  const items = (s: ExpenseSnapshot) =>
+    s.itemization
+      ? [
+          ...s.itemization.items.map((i) => `${i.description} ${formatMoney(i.amountMinor, s.currency)}`),
+          `tax ${formatMoney(s.itemization.taxMinor, s.currency)}`,
+          `tip ${formatMoney(s.itemization.tipMinor, s.currency)}`,
+        ].join(", ")
+      : "none";
   const fields: [string, string, string][] = [
     ["Description", before.description, after.description],
     ["Amount", money(before), money(after)],
@@ -52,6 +61,7 @@ function changesBetween(before: ExpenseSnapshot, after: ExpenseSnapshot, categor
     ["Notes", before.notes ?? "none", after.notes ?? "none"],
     ["Paid by", payers(before), payers(after)],
     ["Split", split(before), split(after)],
+    ["Items", items(before), items(after)],
   ];
   return fields.filter(([, from, to]) => from !== to).map(([label, from, to]) => `${label}: ${from} → ${to}`);
 }
@@ -93,6 +103,8 @@ function ExpenseDetail({ expense }: { expense: Expense }) {
   const members = groupQuery.data?.members ?? [];
   const ready = expense.groupId === null || groupQuery.data !== undefined;
   const categoryName = (id: string | null) => (id === null ? "none" : (categoriesQuery.data?.find((c) => c.id === id)?.name ?? "unknown"));
+
+  const nameOf = (id: string) => expense.participants.find((p) => p.userId === id)?.displayName ?? "Someone";
 
   /** Current members, plus anyone already on the expense who has left. */
   function peopleFor(e: Expense): Person[] {
@@ -197,6 +209,30 @@ function ExpenseDetail({ expense }: { expense: Expense }) {
               ))}
             </div>
           </dl>
+          {expense.itemization && (
+            <div className="mt-4 text-sm">
+              <h2 className="font-medium text-ink mb-1">Items</h2>
+              <ul className="text-ink-muted">
+                {expense.itemization.items.map((item, i) => (
+                  <li key={i} className="flex justify-between gap-4">
+                    <span>
+                      {item.description} · {item.assignments.map((a) => nameOf(a.userId)).join(", ")}
+                    </span>
+                    <span className="figure">{formatMoney(item.amountMinor, expense.currency)}</span>
+                  </li>
+                ))}
+                {([["Tax", expense.itemization.taxMinor], ["Tip", expense.itemization.tipMinor]] as const).map(
+                  ([label, amount]) =>
+                    amount > 0 && (
+                      <li key={label} className="flex justify-between">
+                        <span>{label}</span>
+                        <span className="figure">{formatMoney(amount, expense.currency)}</span>
+                      </li>
+                    ),
+                )}
+              </ul>
+            </div>
+          )}
           {error && <p className="mt-3 text-sm text-rust">{error}</p>}
           <div className="mt-4 flex items-center gap-4">
             {groupQuery.data?.archivedAt ? (
@@ -228,6 +264,8 @@ function ExpenseDetail({ expense }: { expense: Expense }) {
           </div>
         </section>
       )}
+
+      <CommentsSection expenseId={expense.id} readOnly={expense.deletedAt !== null || !!groupQuery.data?.archivedAt} />
 
       {historyQuery.data && (
         <section className={`mt-6 ${cardClass}`}>

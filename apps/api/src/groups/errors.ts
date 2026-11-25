@@ -67,6 +67,12 @@ export class ExpenseNotFoundError extends DomainError {
   }
 }
 
+export class CommentNotFoundError extends DomainError {
+  constructor() {
+    super("Comment not found", "comment_not_found");
+  }
+}
+
 export class SettlementNotFoundError extends DomainError {
   constructor() {
     super("Payment not found", "settlement_not_found");
