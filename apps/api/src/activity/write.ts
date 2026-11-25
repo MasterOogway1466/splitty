@@ -9,7 +9,7 @@ export async function writeActivity(
   input: {
     actorId: string;
     type: (typeof activityFeed.$inferInsert)["type"];
-    entityType: "expense" | "settlement";
+    entityType: "expense" | "settlement" | "group" | "member";
     entityId: string;
     groupId: string | null;
     involved: Iterable<string>;

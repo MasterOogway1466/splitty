@@ -273,7 +273,7 @@ describe("expense lifecycle (docs/PLAN-PUBLIC.md Phase 2B)", () => {
   });
 
   describe("activity", () => {
-    const feed = async (user: User, url = "/api/activity") => (await call(user, "GET", url)).json().items;
+    const feed = async (user: User, url = "/api/activity") => (await call(user, "GET", url)).json().items.filter((i: { entityType: string }) => i.entityType !== "member");
 
     it("reaches every group member, names the expense, and covers each change", async () => {
       const { id } = await create({ participantUserIds: [a.userId] });

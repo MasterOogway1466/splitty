@@ -1,17 +1,57 @@
 import { formatMoney } from "@splitty/shared";
+import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { AppShell } from "../components/AppShell.js";
-import { usePeopleBalances } from "../lib/hooks.js";
+import { inputClass, linkButtonClass, primaryButtonClass } from "../components/styles.js";
+import { ApiError } from "../lib/api.js";
+import { useAddFriend, usePeopleBalances } from "../lib/hooks.js";
 
 export function FriendsPage() {
   const peopleQuery = usePeopleBalances();
+  const addFriend = useAddFriend();
+  const [email, setEmail] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleAdd(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    try {
+      await addFriend.mutateAsync(email);
+      setEmail("");
+      setShowAdd(false);
+    } catch (err) {
+      setError(err instanceof ApiError ? (err.code === "rate_limited" ? "Too many invites today. Try again tomorrow." : err.message) : "Something went wrong");
+    }
+  }
 
   return (
     <AppShell>
-      <h1 className="text-lg font-semibold text-ink mb-4">Friends</h1>
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-lg font-semibold text-ink">Friends</h1>
+        <button onClick={() => setShowAdd((v) => !v)} className={linkButtonClass}>
+          {showAdd ? "Cancel" : "Add friend"}
+        </button>
+      </div>
+      {showAdd && (
+        <form onSubmit={handleAdd} className="mb-4 flex gap-2">
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="email@example.com"
+            required
+            className={`flex-1 ${inputClass}`}
+          />
+          <button type="submit" disabled={addFriend.isPending} className={primaryButtonClass}>
+            {addFriend.isPending ? "Adding…" : "Add"}
+          </button>
+        </form>
+      )}
+      {error && <p className="text-sm text-rust mb-4">{error}</p>}
       {peopleQuery.isLoading && <p className="text-sm text-ink-muted">Loading…</p>}
       {peopleQuery.data && peopleQuery.data.length === 0 && (
-        <p className="text-sm text-ink-muted">No one here yet — share a group with someone and they'll show up here.</p>
+        <p className="text-sm text-ink-muted">No one here yet — add a friend or share a group with someone, and they'll show up here.</p>
       )}
       {peopleQuery.data && peopleQuery.data.length > 0 && (
         <div className="bg-white border border-line rounded-lg divide-y divide-line">

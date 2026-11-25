@@ -3,7 +3,7 @@ import { formatCalendarDate, formatMoney, type Expense } from "@splitty/shared";
 import { useAuth } from "../lib/AuthContext.js";
 import { personLabel } from "../lib/members.js";
 
-export function ExpenseRows({ expenses, onDuplicate }: { expenses: Expense[]; onDuplicate: (expense: Expense) => void }) {
+export function ExpenseRows({ expenses, onDuplicate }: { expenses: Expense[]; onDuplicate: ((expense: Expense) => void) | null }) {
   const { user } = useAuth();
   return (
     <div className="divide-y divide-line border-t border-line">
@@ -15,7 +15,7 @@ export function ExpenseRows({ expenses, onDuplicate }: { expenses: Expense[]; on
             </Link>
             <p className="text-xs text-ink-muted">
               {expense.payers.map((p) => personLabel(p, user?.id)).join(", ")} paid · {formatCalendarDate(expense.expenseDate)}
-              {!expense.deletedAt && (
+              {!expense.deletedAt && onDuplicate && (
                 <>
                   {" · "}
                   <button onClick={() => onDuplicate(expense)} className="hover:text-ledger transition-colors">

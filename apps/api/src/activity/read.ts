@@ -47,6 +47,14 @@ export async function readActivity(db: Executor, userId: string, query: ListQuer
     }
   }
 
+  const memberIds = [...new Set(rows.filter((r) => r.feed.entityType === "member").map((r) => r.feed.entityId))];
+  if (memberIds.length > 0) {
+    for (const u of await db.select({ id: users.id, displayName: users.displayName }).from(users).where(inArray(users.id, memberIds))) {
+      labels.set(u.id, u.displayName);
+    }
+  }
+  for (const r of rows) if (r.feed.entityType === "group" && r.groupName !== null) labels.set(r.feed.entityId, r.groupName);
+
   const items = rows.map(({ feed, actorName, groupName, groupDeletedAt, myRole }) => {
     const canOpen = feed.groupId === null ? partyTo.has(feed.entityId) : myRole !== null && groupDeletedAt === null;
     return {

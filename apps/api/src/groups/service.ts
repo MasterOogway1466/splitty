@@ -1,21 +1,25 @@
 import { and, asc, count, eq, inArray, isNotNull, isNull, ne } from "drizzle-orm";
-import type { GroupSummary, GroupDetail, GroupMember, MemberColor } from "@splitty/shared";
+import type { DefaultSplit, GroupSummary, GroupDetail, GroupMember, MemberColor, UpdateGroupRequest } from "@splitty/shared";
 import type { Database, Executor } from "../db/client.js";
+import { writeActivity } from "../activity/write.js";
 import { lockGroup } from "../db/locks.js";
-import { groupMembers, groups, users } from "../db/schema.js";
+import { expenses, friendLinks, groupMembers, groups, settlements, users } from "../db/schema.js";
 import type { Env } from "../env.js";
 import { createInviteLink, reserveInviteSend } from "../invites/send.js";
 import type { Mailer } from "../mail/mailer.js";
 import { computeBalancesByGroup, computeGroupBalances } from "../ledger/balances.js";
 import {
   AlreadyMemberError,
+  CurrencyLockedError,
   CurrencyMismatchError,
   DomainError,
+  GroupArchivedError,
   GroupNotFoundError,
   GroupNotSettledError,
   NonzeroBalanceError,
   NotGroupMemberError,
   NotGroupOwnerError,
+  WrongStateError,
 } from "./errors.js";
 
 type GroupRow = typeof groups.$inferSelect;
@@ -94,12 +98,21 @@ export class GroupService {
     if (group.defaultCurrency !== currency) throw new CurrencyMismatchError(group.defaultCurrency);
   }
 
-  async listMyGroups(userId: string): Promise<GroupSummary[]> {
+  /** Active groups by default; "deleted" lists only those the user owned. */
+  async listMyGroups(userId: string, which: "active" | "archived" | "deleted" = "active"): Promise<GroupSummary[]> {
     const myGroups = await this.#db
       .select({ group: groups })
       .from(groupMembers)
       .innerJoin(groups, eq(groups.id, groupMembers.groupId))
-      .where(and(eq(groupMembers.userId, userId), isNull(groupMembers.removedAt), isNull(groups.deletedAt)));
+      .where(
+        and(
+          eq(groupMembers.userId, userId),
+          isNull(groupMembers.removedAt),
+          which === "deleted"
+            ? and(isNotNull(groups.deletedAt), eq(groupMembers.role, "owner"))
+            : and(isNull(groups.deletedAt), which === "archived" ? isNotNull(groups.archivedAt) : isNull(groups.archivedAt)),
+        ),
+      );
     if (myGroups.length === 0) return [];
 
     const ids = myGroups.map(({ group }) => group.id);
@@ -155,6 +168,11 @@ export class GroupService {
       memberCount: members.length,
       yourBalanceMinor: balances.get(requestingUserId) ?? 0,
       members,
+      archivedAt: group.archivedAt?.toISOString() ?? null,
+      canChangeCurrency: !(await this.#hasEntries(this.#db, groupId)),
+      defaultSplit: group.defaultSplitConfig
+        ? ({ method: group.defaultSplitMethod, ...(group.defaultSplitConfig as object) } as DefaultSplit)
+        : null,
     };
   }
 
@@ -168,37 +186,33 @@ export class GroupService {
     const [group] = await this.#db.select().from(groups).where(eq(groups.id, groupId));
     if (!group || group.deletedAt) throw new GroupNotFoundError();
 
-    let [user] = await this.#db.select().from(users).where(eq(users.email, email));
-    if (user?.status === "suspended" || user?.status === "deleted") {
-      throw new DomainError("This account cannot be added to a group", "account_unavailable");
-    }
+    const [user] = await this.#db.select().from(users).where(eq(users.email, email));
+    this.#requireAvailable(user);
 
     if (user?.status === "active") {
-      if (await this.isMember(groupId, user.id)) throw new AlreadyMemberError();
-      await this.#upsertMember(this.#db, groupId, user.id);
+      await this.#db.transaction(async (tx) => {
+        await lockGroup(tx, groupId);
+        if (await this.isMember(groupId, user.id, tx)) throw new AlreadyMemberError();
+        await this.#upsertMember(tx, groupId, user.id, inviterId);
+      });
       return;
     }
+
+    // Checked here too so an archived group doesn't use up an invite.
+    if (group.archivedAt) throw new GroupArchivedError();
 
     // No account yet, or an unclaimed placeholder: (re)send an invite. An
     // invitee already in the group gets a fresh link rather than an error.
     await reserveInviteSend(this.#db, inviterId, email);
 
     const link = await this.#db.transaction(async (tx) => {
-      if (!user) {
-        // Another request may have just created the same placeholder.
-        await tx
-          .insert(users)
-          .values({ email, displayName: email.split("@")[0] ?? email, status: "invited" })
-          .onConflictDoNothing();
-        [user] = await tx.select().from(users).where(eq(users.email, email));
-      }
-      if (!user) throw new Error("Placeholder missing after insert");
-      await this.#upsertMember(tx, groupId, user.id);
-      return createInviteLink(tx, this.#env, { inviterId, email, placeholderUserId: user.id, groupId });
+      await lockGroup(tx, groupId);
+      const placeholder = user ?? (await this.#ensurePlaceholder(tx, email));
+      await this.#upsertMember(tx, groupId, placeholder.id, inviterId);
+      return createInviteLink(tx, this.#env, { inviterId, email, placeholderUserId: placeholder.id, groupId });
     });
 
-    const [inviter] = await this.#db.select().from(users).where(eq(users.id, inviterId));
-    const inviterName = inviter?.displayName ?? "Someone";
+    const inviterName = await this.#displayName(inviterId);
     await this.#mailer.send({
       to: email,
       subject: `${inviterName} added you to "${group.name}" on Splitty`,
@@ -206,17 +220,171 @@ export class GroupService {
     });
   }
 
+  /** Connects two people outside any group, inviting the other if they
+   * have no account yet. The same reach as adding them to a group. */
+  async addFriend(email: string, userId: string): Promise<void> {
+    const [user] = await this.#db.select().from(users).where(eq(users.email, email));
+    if (user?.id === userId) throw new DomainError("That's your own email", "own_email");
+    this.#requireAvailable(user);
+
+    if (user?.status === "active") {
+      await this.#linkFriends(this.#db, userId, user.id);
+      return;
+    }
+
+    await reserveInviteSend(this.#db, userId, email);
+    const link = await this.#db.transaction(async (tx) => {
+      const placeholder = user ?? (await this.#ensurePlaceholder(tx, email));
+      await this.#linkFriends(tx, userId, placeholder.id);
+      return createInviteLink(tx, this.#env, { inviterId: userId, email, placeholderUserId: placeholder.id, groupId: null });
+    });
+
+    const inviterName = await this.#displayName(userId);
+    await this.#mailer.send({
+      to: email,
+      subject: `${inviterName} wants to split expenses with you on Splitty`,
+      text: `${inviterName} added you on Splitty to split expenses together.\n\nClick here to set up your account:\n\n${link}\n\nThis link expires in 7 days.`,
+    });
+  }
+
+  #requireAvailable(user: typeof users.$inferSelect | undefined): void {
+    if (user?.status === "suspended" || user?.status === "deleted") {
+      throw new DomainError("This account cannot be added", "account_unavailable");
+    }
+  }
+
+  /** Another request may have just created the same placeholder. */
+  async #ensurePlaceholder(tx: Executor, email: string): Promise<typeof users.$inferSelect> {
+    await tx
+      .insert(users)
+      .values({ email, displayName: email.split("@")[0] ?? email, status: "invited" })
+      .onConflictDoNothing();
+    const [placeholder] = await tx.select().from(users).where(eq(users.email, email));
+    if (!placeholder) throw new Error("Placeholder missing after insert");
+    return placeholder;
+  }
+
+  async #linkFriends(tx: Executor, userId: string, otherId: string): Promise<void> {
+    const [a, b] = [userId, otherId].sort();
+    await tx.insert(friendLinks).values({ userAId: a!, userBId: b! }).onConflictDoNothing();
+  }
+
+  async #displayName(userId: string): Promise<string> {
+    const [user] = await this.#db.select({ displayName: users.displayName }).from(users).where(eq(users.id, userId));
+    return user?.displayName ?? "Someone";
+  }
+
   /** A returning member reuses their old row (the key is group + user) and
    * rejoins as a plain member; a current member is left untouched. */
-  async #upsertMember(db: Pick<Database, "insert">, groupId: string, userId: string): Promise<void> {
-    await db
+  async #upsertMember(tx: Executor, groupId: string, userId: string, addedBy: string): Promise<void> {
+    const added = await tx
       .insert(groupMembers)
       .values({ groupId, userId, role: "member" })
       .onConflictDoUpdate({
         target: [groupMembers.groupId, groupMembers.userId],
         set: { removedAt: null, role: "member", joinedAt: new Date() },
         setWhere: isNotNull(groupMembers.removedAt),
-      });
+      })
+      .returning({ userId: groupMembers.userId });
+    if (added.length === 0) return;
+    await writeActivity(tx, { actorId: addedBy, type: "member_added", entityType: "member", entityId: userId, groupId, involved: [] });
+  }
+
+  async #hasEntries(db: Executor, groupId: string): Promise<boolean> {
+    const [expense] = await db.select({ id: expenses.id }).from(expenses).where(eq(expenses.groupId, groupId)).limit(1);
+    if (expense) return true;
+    const [settlement] = await db.select({ id: settlements.id }).from(settlements).where(eq(settlements.groupId, groupId)).limit(1);
+    return !!settlement;
+  }
+
+  /** Open to any member, like the ledger itself. */
+  async updateGroup(groupId: string, userId: string, body: UpdateGroupRequest): Promise<void> {
+    await this.#db.transaction(async (tx) => {
+      await lockGroup(tx, groupId);
+      if (!(await this.isMember(groupId, userId, tx))) throw new NotGroupMemberError();
+
+      const [group] = await tx.select().from(groups).where(eq(groups.id, groupId));
+      const changingCurrency = body.defaultCurrency !== undefined && body.defaultCurrency !== group!.defaultCurrency;
+      if (changingCurrency && (await this.#hasEntries(tx, groupId))) throw new CurrencyLockedError();
+      if (body.defaultSplit && !(await this.areMembers(groupId, body.defaultSplit.values.map((v) => v.userId), tx))) {
+        throw new NotGroupMemberError();
+      }
+
+      const { defaultSplit, ...fields } = body;
+      const set: Partial<GroupRow> = {};
+      if (fields.name !== undefined) set.name = fields.name;
+      if (fields.groupType !== undefined) set.groupType = fields.groupType;
+      if (fields.defaultCurrency !== undefined) set.defaultCurrency = fields.defaultCurrency;
+      if (fields.simplifyDebts !== undefined) set.simplifyDebts = fields.simplifyDebts;
+      if (defaultSplit !== undefined) {
+        set.defaultSplitMethod = defaultSplit?.method ?? "equal";
+        set.defaultSplitConfig = defaultSplit ? { values: defaultSplit.values } : null;
+      }
+      await tx.update(groups).set(set).where(eq(groups.id, groupId));
+      await this.#groupActivity(tx, groupId, userId, "group_updated");
+    });
+  }
+
+  /** Archiving makes a group read-only, so it must be settled first: there
+   * would be no way to settle it inside afterwards. */
+  async setArchived(groupId: string, userId: string, archived: boolean): Promise<void> {
+    await this.requireMembership(groupId, userId);
+    await this.#db.transaction(async (tx) => {
+      await lockGroup(tx, groupId, { allowArchived: !archived });
+      if (!(await this.isMember(groupId, userId, tx))) throw new NotGroupMemberError();
+      if (archived) {
+        await this.#requireSettled(tx, groupId);
+      } else {
+        const [group] = await tx.select({ archivedAt: groups.archivedAt }).from(groups).where(eq(groups.id, groupId));
+        if (!group?.archivedAt) throw new WrongStateError("This group isn't archived");
+      }
+      await tx
+        .update(groups)
+        .set({ archivedAt: archived ? new Date() : null })
+        .where(eq(groups.id, groupId));
+      await this.#groupActivity(tx, groupId, userId, archived ? "group_archived" : "group_unarchived");
+    });
+  }
+
+  /** Only its owner can bring a deleted group back. */
+  async restoreGroup(groupId: string, userId: string): Promise<void> {
+    await this.#db.transaction(async (tx) => {
+      const [group] = await tx
+        .select({ id: groups.id })
+        .from(groups)
+        .where(and(eq(groups.id, groupId), isNotNull(groups.deletedAt)))
+        .for("no key update");
+      if (!group) throw new GroupNotFoundError();
+      const [owner] = await tx
+        .select({ userId: groupMembers.userId })
+        .from(groupMembers)
+        .where(
+          and(
+            eq(groupMembers.groupId, groupId),
+            eq(groupMembers.userId, userId),
+            eq(groupMembers.role, "owner"),
+            isNull(groupMembers.removedAt),
+          ),
+        );
+      if (!owner) throw new GroupNotFoundError();
+      await tx.update(groups).set({ deletedAt: null }).where(eq(groups.id, groupId));
+      await this.#groupActivity(tx, groupId, userId, "group_restored");
+    });
+  }
+
+  async #requireSettled(tx: Executor, groupId: string): Promise<void> {
+    for (const balance of (await computeGroupBalances(tx, groupId)).values()) {
+      if (balance !== 0) throw new GroupNotSettledError();
+    }
+  }
+
+  async #groupActivity(
+    tx: Executor,
+    groupId: string,
+    actorId: string,
+    type: "group_updated" | "group_archived" | "group_unarchived" | "group_deleted" | "group_restored",
+  ): Promise<void> {
+    await writeActivity(tx, { actorId, type, entityType: "group", entityId: groupId, groupId, involved: [] });
   }
 
   /** Only the owner may remove someone else; anyone may remove themselves.
@@ -230,7 +398,8 @@ export class GroupService {
     await this.requireMembership(groupId, requesterId);
 
     await this.#db.transaction(async (tx) => {
-      await lockGroup(tx, groupId);
+      // Leaving stays possible in an archived group.
+      await lockGroup(tx, groupId, { allowArchived: targetUserId === requesterId });
 
       const [target] = await tx
         .select({ role: groupMembers.role })
@@ -249,6 +418,15 @@ export class GroupService {
         .update(groupMembers)
         .set({ removedAt: new Date() })
         .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, targetUserId)));
+
+      await writeActivity(tx, {
+        actorId: requesterId,
+        type: "member_removed",
+        entityType: "member",
+        entityId: targetUserId,
+        groupId,
+        involved: [targetUserId],
+      });
 
       if (target.role === "owner") {
         const [successor] = await tx
@@ -299,15 +477,13 @@ export class GroupService {
    * deletedAt column, same pattern as expenses/settlements. */
   async deleteGroup(groupId: string, requesterId: string): Promise<void> {
     await this.#db.transaction(async (tx) => {
-      await lockGroup(tx, groupId);
+      await lockGroup(tx, groupId, { allowArchived: true });
       await this.#requireOwner(groupId, requesterId, tx);
 
-      const balances = await computeGroupBalances(tx, groupId);
-      for (const balance of balances.values()) {
-        if (balance !== 0) throw new GroupNotSettledError();
-      }
+      await this.#requireSettled(tx, groupId);
 
       await tx.update(groups).set({ deletedAt: new Date() }).where(eq(groups.id, groupId));
+      await this.#groupActivity(tx, groupId, requesterId, "group_deleted");
     });
   }
 }

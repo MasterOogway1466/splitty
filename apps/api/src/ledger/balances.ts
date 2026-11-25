@@ -1,5 +1,5 @@
 import { and, eq, exists, inArray, isNull, or, sql } from "drizzle-orm";
-import { attributeDebts, type GroupDebt } from "@splitty/shared";
+import { attributeDebts, simplifyDebts, type GroupDebt, type GroupDebts } from "@splitty/shared";
 import type { Executor } from "../db/client.js";
 import { expenseParticipants, expensePayers, expenses, settlements } from "../db/schema.js";
 
@@ -167,11 +167,23 @@ export async function pairwiseFlows(db: Executor, userId: string): Promise<Pairw
   return result;
 }
 
+/** What to pay in a group, and what the entries themselves add up to. */
+export async function computeGroupDebts(db: Executor, group: { id: string; simplifyDebts: boolean }, activeMemberIds: Set<string>): Promise<GroupDebts> {
+  const recordedDebts = await computeRecordedDebts(db, group.id, activeMemberIds);
+  if (!group.simplifyDebts) return { simplified: false, debts: recordedDebts, recordedDebts };
+  const debts = simplifyDebts(await computeGroupBalances(db, group.id)).map((d) => ({
+    fromUserId: d.fromId,
+    toUserId: d.toId,
+    amountMinor: d.amountMinor,
+  }));
+  return { simplified: true, debts, recordedDebts };
+}
+
 /** Payments that would clear every current member's balance in a group.
  * Members who owe each other directly are paired as recorded. Debts that
  * run through someone who has left (their own net is zero) are passed on to
  * the members at either end. */
-export async function computeGroupDebts(db: Executor, groupId: string, activeMemberIds: Set<string>): Promise<GroupDebt[]> {
+async function computeRecordedDebts(db: Executor, groupId: string, activeMemberIds: Set<string>): Promise<GroupDebt[]> {
   const paid = await db
     .select({ expenseId: expenses.id, userId: expensePayers.userId, amountMinor: expensePayers.amountMinor })
     .from(expensePayers)

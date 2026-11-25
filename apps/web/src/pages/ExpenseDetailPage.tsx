@@ -199,7 +199,9 @@ function ExpenseDetail({ expense }: { expense: Expense }) {
           </dl>
           {error && <p className="mt-3 text-sm text-rust">{error}</p>}
           <div className="mt-4 flex items-center gap-4">
-            {expense.deletedAt ? (
+            {groupQuery.data?.archivedAt ? (
+              <span className="text-sm text-ink-muted">The group is archived, so this can't be changed.</span>
+            ) : expense.deletedAt ? (
               <button onClick={() => changeDeleted(false)} disabled={setDeleted.isPending} className={linkButtonClass}>
                 Restore
               </button>

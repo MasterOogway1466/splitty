@@ -5,6 +5,7 @@ import {
   createGroupRequestSchema,
   createSettlementRequestSchema,
   setMemberColorRequestSchema,
+  updateGroupRequestSchema,
 } from "@splitty/shared";
 import { readActivity } from "../activity/read.js";
 import { checkAndRecordRateLimit } from "../auth/rateLimit.js";
@@ -12,6 +13,7 @@ import { computeGroupDebts } from "../ledger/balances.js";
 import { listExpenses, listSettlements } from "../ledger/lists.js";
 import { recordExpense, recordSettlement } from "../ledger/record.js";
 import { authenticateVerified } from "../plugins/authenticate.js";
+import { limitLedgerEdits } from "./editLimit.js";
 import { listQuery } from "./paging.js";
 import { uuidParam } from "./params.js";
 import { serializeExpense, serializeSettlement } from "./serializers.js";
@@ -21,7 +23,7 @@ import { serializeExpense, serializeSettlement } from "./serializers.js";
 // per-account cap on resource creation, bounding abuse and keeping load
 // predictable. Generous enough that real usage never brushes up against it.
 const GROUP_CREATE_CAP = { windowSeconds: 24 * 60 * 60, maxEvents: 20 };
-const MEMBER_ADD_CAP = { windowSeconds: 24 * 60 * 60, maxEvents: 100 };
+export const MEMBER_ADD_CAP = { windowSeconds: 24 * 60 * 60, maxEvents: 100 };
 const EXPENSE_CREATE_CAP = { windowSeconds: 24 * 60 * 60, maxEvents: 200 };
 const SETTLEMENT_CREATE_CAP = { windowSeconds: 24 * 60 * 60, maxEvents: 200 };
 
@@ -41,12 +43,37 @@ export async function registerGroupRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get("/", async (request) => {
-    return groupService.listMyGroups(request.currentUser!.id);
+    const { archived, deleted } = request.query as { archived?: string; deleted?: string };
+    const which = deleted === "true" ? "deleted" : archived === "true" ? "archived" : "active";
+    return groupService.listMyGroups(request.currentUser!.id, which);
   });
 
   app.get("/:groupId", async (request) => {
     const groupId = uuidParam(request, "groupId");
     return groupService.getGroupDetail(groupId, request.currentUser!.id);
+  });
+
+  app.patch("/:groupId", async (request) => {
+    const groupId = uuidParam(request, "groupId");
+    const userId = request.currentUser!.id;
+    await groupService.requireMembership(groupId, userId);
+    await limitLedgerEdits(db, userId);
+    await groupService.updateGroup(groupId, userId, updateGroupRequestSchema.parse(request.body));
+    return groupService.getGroupDetail(groupId, userId);
+  });
+
+  for (const [action, archived] of [["archive", true], ["unarchive", false]] as const) {
+    app.post(`/:groupId/${action}`, async (request, reply) => {
+      const userId = request.currentUser!.id;
+      await limitLedgerEdits(db, userId);
+      await groupService.setArchived(uuidParam(request, "groupId"), userId, archived);
+      return reply.status(204).send();
+    });
+  }
+
+  app.post("/:groupId/restore", async (request, reply) => {
+    await groupService.restoreGroup(uuidParam(request, "groupId"), request.currentUser!.id);
+    return reply.status(204).send();
   });
 
   app.post("/:groupId/members", async (request, reply) => {
@@ -128,8 +155,8 @@ export async function registerGroupRoutes(app: FastifyInstance): Promise<void> {
 
   app.get("/:groupId/debts", async (request) => {
     const groupId = uuidParam(request, "groupId");
-    const { members } = await groupService.getGroupDetail(groupId, request.currentUser!.id);
-    return computeGroupDebts(db, groupId, new Set(members.map((m) => m.userId)));
+    const group = await groupService.getGroupDetail(groupId, request.currentUser!.id);
+    return computeGroupDebts(db, group, new Set(group.members.map((m) => m.userId)));
   });
 
   app.get("/:groupId/activity", async (request) => {

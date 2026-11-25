@@ -44,4 +44,12 @@ export const groupDebtSchema = z.object({
   toUserId: z.string().uuid(),
   amountMinor: z.number().int(),
 });
+
+/** `debts` is what to pay, simplified if the group asks for it;
+ * `recordedDebts` is always who owes whom from the entries themselves. */
+export interface GroupDebts {
+  simplified: boolean;
+  debts: GroupDebt[];
+  recordedDebts: GroupDebt[];
+}
 export type GroupDebt = z.infer<typeof groupDebtSchema>;

@@ -103,7 +103,9 @@ function SettlementDetail({ settlement }: { settlement: Settlement }) {
           <EditForm key={editing.version} settlement={editing} onReload={() => setEditing(settlement)} onDone={() => setEditing(null)} />
         ) : (
           <div className="mt-4 flex items-center gap-4">
-            {settlement.deletedAt ? (
+            {groupQuery.data?.archivedAt ? (
+              <span className="text-sm text-ink-muted">The group is archived, so this can't be changed.</span>
+            ) : settlement.deletedAt ? (
               <button onClick={() => changeDeleted(false)} disabled={setDeleted.isPending} className={linkButtonClass}>
                 Restore
               </button>

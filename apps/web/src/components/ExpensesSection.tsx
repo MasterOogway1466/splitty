@@ -30,14 +30,16 @@ export function ExpensesSection({ group }: { group: GroupDetail }) {
     <section className={`mb-6 ${cardClass}`}>
       <div className="flex items-center justify-between px-4 py-3.5">
         <h2 className="font-medium text-ink">{showDeleted ? "Deleted expenses" : "Expenses"}</h2>
-        <div className="flex gap-4">
-          <button onClick={() => setShowSettle((v) => !v)} className={linkButtonClass}>
-            Settle up
-          </button>
-          <button onClick={() => (form ? setForm(null) : openForm(emptyDraft(user?.id ?? "", memberIds)))} className={linkButtonClass}>
-            Add expense
-          </button>
-        </div>
+        {!group.archivedAt && (
+          <div className="flex gap-4">
+            <button onClick={() => setShowSettle((v) => !v)} className={linkButtonClass}>
+              Settle up
+            </button>
+            <button onClick={() => (form ? setForm(null) : openForm(emptyDraft(user?.id ?? "", memberIds, group.defaultSplit)))} className={linkButtonClass}>
+              Add expense
+            </button>
+          </div>
+        )}
       </div>
 
       {showSettle && debtsQuery.data && (
@@ -46,7 +48,7 @@ export function ExpensesSection({ group }: { group: GroupDetail }) {
             people={group.members}
             currency={group.defaultCurrency}
             currentUserId={user?.id}
-            suggestions={debtsQuery.data}
+            suggestions={debtsQuery.data.debts}
             onSubmit={async (request) => {
               await createSettlement.mutateAsync(request);
               setShowSettle(false);
@@ -76,7 +78,7 @@ export function ExpensesSection({ group }: { group: GroupDetail }) {
       {expensesQuery.data && expenses.length === 0 && (
         <p className="text-sm text-ink-muted px-4 pb-4">{showDeleted ? "Nothing deleted." : "No expenses yet."}</p>
       )}
-      {expenses.length > 0 && <ExpenseRows expenses={expenses} onDuplicate={duplicate} />}
+      {expenses.length > 0 && <ExpenseRows expenses={expenses} onDuplicate={group.archivedAt ? null : duplicate} />}
       <LoadMore query={expensesQuery} />
       <div className="px-4 py-3 border-t border-line">
         <button onClick={() => setShowDeleted((v) => !v)} className="text-xs text-ink-muted hover:text-ledger transition-colors">
