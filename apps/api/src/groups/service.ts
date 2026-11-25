@@ -192,6 +192,7 @@ export class GroupService {
     if (user?.status === "active") {
       await this.#db.transaction(async (tx) => {
         await lockGroup(tx, groupId);
+        if (!(await this.isMember(groupId, inviterId, tx))) throw new NotGroupMemberError();
         if (await this.isMember(groupId, user.id, tx)) throw new AlreadyMemberError();
         await this.#upsertMember(tx, groupId, user.id, inviterId);
       });
@@ -207,6 +208,7 @@ export class GroupService {
 
     const link = await this.#db.transaction(async (tx) => {
       await lockGroup(tx, groupId);
+      if (!(await this.isMember(groupId, inviterId, tx))) throw new NotGroupMemberError();
       const placeholder = user ?? (await this.#ensurePlaceholder(tx, email));
       await this.#upsertMember(tx, groupId, placeholder.id, inviterId);
       return createInviteLink(tx, this.#env, { inviterId, email, placeholderUserId: placeholder.id, groupId });

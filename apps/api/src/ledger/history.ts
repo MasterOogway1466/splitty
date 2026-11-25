@@ -1,6 +1,7 @@
 import type { ExpenseSnapshot } from "@splitty/shared";
 import { eq } from "drizzle-orm";
 import type { Executor } from "../db/client.js";
+import { readItemizations } from "./items.js";
 import { expenseParticipants, expensePayers, expenses } from "../db/schema.js";
 
 type ExpenseRow = typeof expenses.$inferSelect;
@@ -34,6 +35,7 @@ export async function snapshotExpense(tx: Executor, row: ExpenseRow): Promise<St
     expenseDate: row.expenseDate,
     payers: payers.map((p) => ({ userId: p.userId, amountMinor: p.amountMinor })),
     participants: participants.map((p) => ({ userId: p.userId, owedAmountMinor: p.owedAmountMinor, shareInput: p.shareInput })),
+    itemization: (await readItemizations(tx, [row])).get(row.id) ?? null,
   };
 }
 

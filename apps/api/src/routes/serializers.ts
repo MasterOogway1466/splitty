@@ -1,6 +1,7 @@
 import { inArray } from "drizzle-orm";
 import type { Expense, ExpenseHistoryEntry, ExpenseSnapshot, Settlement, SettlementHistoryEntry, ShareInput } from "@splitty/shared";
 import type { Database } from "../db/client.js";
+import { readItemizations } from "../ledger/items.js";
 import type { readSettlementHistory } from "../ledger/settlementLifecycle.js";
 import type { readHistory } from "../ledger/lifecycle.js";
 import { expenseParticipants, expensePayers, expenses, settlements, users } from "../db/schema.js";
@@ -31,6 +32,7 @@ export async function serializeExpenses(db: Database, rows: ExpenseRow[]): Promi
     .where(inArray(expenseParticipants.expenseId, ids))
     .orderBy(expenseParticipants.userId);
   const nameOf = await displayNames(db, [...payerRows, ...participantRows].map((p) => p.userId));
+  const itemizations = await readItemizations(db, rows);
   const payersOf = byExpense(payerRows);
   const participantsOf = byExpense(participantRows);
 
@@ -52,6 +54,7 @@ export async function serializeExpenses(db: Database, rows: ExpenseRow[]): Promi
       owedAmountMinor: p.owedAmountMinor,
       shareInput: (p.shareInput ?? null) as ShareInput | null,
     })),
+    itemization: itemizations.get(row.id) ?? null,
     createdAt: row.createdAt.toISOString(),
     version: row.version,
     deletedAt: row.deletedAt?.toISOString() ?? null,
@@ -94,6 +97,7 @@ export async function serializeHistory(db: Database, entries: Awaited<ReturnType
     snapshot
       ? {
           ...snapshot,
+          itemization: snapshot.itemization ?? null,
           payers: snapshot.payers.map((p) => ({ ...p, displayName: nameOf(p.userId) })),
           participants: snapshot.participants.map((p) => ({
             ...p,

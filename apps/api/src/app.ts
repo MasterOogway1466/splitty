@@ -19,6 +19,7 @@ import type { Env } from "./env.js";
 import {
   AffectsFormerMemberError,
   AlreadyMemberError,
+  CommentNotFoundError,
   CurrencyLockedError,
   DomainError,
   GroupArchivedError,
@@ -107,7 +108,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     // GroupNotFoundError and NotGroupMemberError deliberately share a
     // status code: a non-member gets the same response whether the group
     // exists or not, so group existence is never leaked to non-members.
-    if (error instanceof GroupNotFoundError || error instanceof NotGroupMemberError || error instanceof NotExpenseParticipantError || error instanceof ExpenseNotFoundError || error instanceof SettlementNotFoundError || error instanceof PersonNotFoundError) {
+    if (error instanceof GroupNotFoundError || error instanceof NotGroupMemberError || error instanceof NotExpenseParticipantError || error instanceof ExpenseNotFoundError || error instanceof SettlementNotFoundError || error instanceof PersonNotFoundError || error instanceof CommentNotFoundError) {
       return reply.status(404).send({ error: error.code, message: error.message });
     }
     if (error instanceof AlreadyMemberError || error instanceof IdConflictError || error instanceof AffectsFormerMemberError) {

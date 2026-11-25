@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from "react";
-import { formatMoney, moneyInputStep, parseMoneyInput, type CreateExpenseRequest } from "@splitty/shared";
+import { formatMoney, formatMoneyInput, moneyInputStep, parseMoneyInput, type CreateExpenseRequest } from "@splitty/shared";
 import { ApiError } from "../lib/api.js";
-import { draftToRequest, type ExpenseDraft, type SplitMethodChoice } from "../lib/expenseDraft.js";
+import { draftToRequest, itemsTotalMinor, type ExpenseDraft, type SplitMethodChoice } from "../lib/expenseDraft.js";
 import { useCategories } from "../lib/hooks.js";
 import { personLabel, type Person } from "../lib/members.js";
+import { ItemizedEditor } from "./ItemizedEditor.js";
 import { inputClass, linkButtonClass, primaryButtonClass } from "./styles.js";
 
 const SPLIT_METHOD_LABELS: Record<SplitMethodChoice, string> = {
@@ -12,6 +13,7 @@ const SPLIT_METHOD_LABELS: Record<SplitMethodChoice, string> = {
   percentage: "%",
   shares: "Shares",
   adjustment: "+/−",
+  itemized: "Items",
 };
 
 export function ExpenseForm(props: {
@@ -33,7 +35,8 @@ export function ExpenseForm(props: {
   const patch = (change: Partial<ExpenseDraft>) => setDraft((prev) => ({ ...prev, ...change }));
   // For running totals only: an incomplete field counts as zero.
   const toMinorOrZero = (value: string) => parseMoneyInput(value, currency) || 0;
-  const target = toMinorOrZero(draft.amount);
+  const itemized = draft.splitMethod === "itemized";
+  const target = itemized ? itemsTotalMinor(draft, currency) : toMinorOrZero(draft.amount);
   const payersTotal = draft.payerRows.reduce((s, r) => s + toMinorOrZero(r.amount), 0);
 
   function patchPayer(index: number, change: Partial<{ userId: string; amount: string }>) {
@@ -96,10 +99,11 @@ export function ExpenseForm(props: {
           type="number"
           step={moneyStep}
           min={moneyStep}
-          value={draft.amount}
+          value={itemized ? (target ? formatMoneyInput(target, currency) : "") : draft.amount}
+          readOnly={itemized}
           onChange={(e) => patch({ amount: e.target.value })}
           placeholder={`Amount (${currency})`}
-          required
+          required={!itemized}
           className={`${inputClass} py-1.5`}
         />
         <input
@@ -195,8 +199,17 @@ export function ExpenseForm(props: {
             </button>
           ))}
         </div>
+        {itemized && (
+          <ItemizedEditor
+            people={people}
+            currency={currency}
+            currentUserId={currentUserId}
+            value={draft}
+            onChange={({ items, tax, tip }) => patch({ items, tax, tip })}
+          />
+        )}
         <div className="mt-1.5 space-y-1.5">
-          {people.map((p) => (
+          {!itemized && people.map((p) => (
             <label key={p.userId} className="flex items-center gap-2 text-ink-muted">
               <input
                 type="checkbox"

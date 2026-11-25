@@ -66,7 +66,8 @@ export async function readActivity(db: Executor, userId: string, query: ListQuer
       entityId: feed.entityId,
       entityLabel: canOpen ? (labels.get(feed.entityId) ?? null) : null,
       groupId: feed.groupId,
-      groupName,
+      // The current name, so only for current members.
+      groupName: myRole === null ? null : groupName,
       createdAt: feed.createdAt.toISOString(),
     };
   });

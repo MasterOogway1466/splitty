@@ -13,7 +13,8 @@ import {
   WrongStateError,
 } from "../groups/errors.js";
 import type { GroupService } from "../groups/service.js";
-import { resolveSplit } from "./expenses.js";
+import { deleteItems, writeItems } from "./items.js";
+import { extrasOf, resolveSplit } from "./expenses.js";
 import { netsOf, snapshotExpense, type HistoryDiff } from "./history.js";
 import { requireCategory } from "./record.js";
 import { requireConnected } from "./relationships.js";
@@ -21,7 +22,7 @@ import { requireConnected } from "./relationships.js";
 type ExpenseRow = typeof expenses.$inferSelect;
 type Snapshot = Awaited<ReturnType<typeof snapshotExpense>>;
 
-const involvedIn = (s: Snapshot) => new Set([...s.payers.map((p) => p.userId), ...s.participants.map((p) => p.userId)]);
+export const involvedIn = (s: Snapshot) => new Set([...s.payers.map((p) => p.userId), ...s.participants.map((p) => p.userId)]);
 
 /** A group expense is open to its current members, a direct one to the
  * people on it. Deleted expenses stay readable, so they can be restored. */
@@ -155,12 +156,15 @@ export async function updateExpense(
         baseAmountMinor: body.amountMinor,
         expenseDate: body.expenseDate ?? before.expenseDate,
         splitMethod: body.splitMethod,
+        ...extrasOf(body),
       })
       .where(eq(expenses.id, expenseId));
     await tx.delete(expensePayers).where(eq(expensePayers.expenseId, expenseId));
     await tx.delete(expenseParticipants).where(eq(expenseParticipants.expenseId, expenseId));
     await tx.insert(expensePayers).values(payers.map((p) => ({ ...p, expenseId })));
     await tx.insert(expenseParticipants).values(participants.map((p) => ({ ...p, expenseId })));
+    await deleteItems(tx, expenseId);
+    await writeItems(tx, expenseId, body);
   });
 }
 

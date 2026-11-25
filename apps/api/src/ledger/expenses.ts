@@ -4,6 +4,7 @@ import type { Executor } from "../db/client.js";
 import { expenseEditHistory, expenseParticipants, expensePayers, expenses, friendLinks } from "../db/schema.js";
 import { writeActivity } from "../activity/write.js";
 import { snapshotExpense, type HistoryDiff } from "./history.js";
+import { splitItems, writeItems } from "./items.js";
 import { InvalidSplitError } from "../groups/errors.js";
 
 export interface CreateExpenseInput {
@@ -26,6 +27,7 @@ export interface CreateExpenseInput {
  * without needing to know the split's shape. */
 export function participantUserIdsOf(split: ExpenseSplit): string[] {
   if (split.splitMethod === "equal") return split.participantUserIds;
+  if (split.splitMethod === "itemized") return [...new Set(split.items.flatMap((i) => i.assignments.map((a) => a.userId)))];
   return split.participants.map((p) => p.userId);
 }
 
@@ -44,6 +46,12 @@ export function computeParticipantShares(
   }
 
   switch (split.splitMethod) {
+    case "itemized":
+      return splitItems(amountMinor, split).map(({ userId, owedAmountMinor, subtotalMinor }) => ({
+        userId,
+        owedAmountMinor,
+        shareInput: { type: "itemized" as const, subtotalMinor },
+      }));
     case "equal": {
       const shares = splitByLargestRemainder(amountMinor, ids.map((id) => ({ id, weight: 1 })));
       return ids.map((userId) => ({ userId, owedAmountMinor: shares.get(userId) ?? 0, shareInput: null }));
@@ -131,6 +139,11 @@ export function resolveSplit(input: { amountMinor: number; payers: { userId: str
   return { payers: input.payers.map((p) => ({ userId: p.userId, amountMinor: p.amountMinor })), participants };
 }
 
+/** Tax and tip columns, zero for every other method. */
+export function extrasOf(split: ExpenseSplit): { taxMinor: number; tipMinor: number } {
+  return split.splitMethod === "itemized" ? { taxMinor: split.taxMinor, tipMinor: split.tipMinor } : { taxMinor: 0, tipMinor: 0 };
+}
+
 /** docs/PLAN-PUBLIC.md §8: `id` is a UUIDv7, the client's if it sent one. */
 export async function createExpense(db: Executor, input: CreateExpenseInput): Promise<{ id: string }> {
   const id = input.id ?? uuidv7();
@@ -154,6 +167,7 @@ export async function createExpense(db: Executor, input: CreateExpenseInput): Pr
       fxRateFetchedAt: now,
       expenseDate: input.expenseDate,
       splitMethod: input.split.splitMethod,
+      ...extrasOf(input.split),
       createdBy: input.createdBy,
       requestHash: input.requestHash ?? null,
       version: 1,
@@ -164,6 +178,7 @@ export async function createExpense(db: Executor, input: CreateExpenseInput): Pr
     await tx.insert(expensePayers).values(payers.map((p) => ({ ...p, expenseId: id })));
 
     await tx.insert(expenseParticipants).values(participants.map((p) => ({ ...p, expenseId: id })));
+    await writeItems(tx, id, input.split);
 
     await tx.insert(expenseEditHistory).values({
       expenseId: id,

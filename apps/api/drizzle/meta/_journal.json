@@ -43,6 +43,13 @@
       "when": 1795533456833,
       "tag": "0005_little_ikaris",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795610708003,
+      "tag": "0006_cuddly_nightcrawler",
+      "breakpoints": true
     }
   ]
 }

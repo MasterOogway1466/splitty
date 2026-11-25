@@ -1,5 +1,7 @@
+import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { simplifyDebts, sumMinor } from "@splitty/shared";
+import { groupMembers, groups } from "../src/db/schema.js";
 import { authHeader, createTestContext, createVerifiedUser, truncateAllTestTables, type TestContext } from "./setup.js";
 
 type User = { userId: string; accessToken: string };
@@ -188,6 +190,28 @@ describe("group settings, archive and friends (docs/PLAN-PUBLIC.md Phase 2D)", (
     expect(items[0]).toMatchObject({ entityLabel: "b", groupName: "Renamed" });
     const gone = (await get(b, "/api/activity")).items;
     expect(gone[0]).toMatchObject({ type: "member_removed", entityLabel: null });
+  });
+
+  it("a former member learns nothing newer, including the group's name", async () => {
+    await call(a, "DELETE", `/api/groups/${groupId}/members/${b.userId}`);
+    await patch(a, { name: "Secret name" });
+    expect(JSON.stringify(await get(b, "/api/activity"))).not.toContain("Secret name");
+  });
+
+  it("someone removed while their add waits cannot add anyone", async () => {
+    await make("o");
+    for (const email of ["o@example.com", "brandnew@example.com"]) {
+      let pending!: ReturnType<typeof call>;
+      await ctx.db.transaction(async (tx) => {
+        await tx.select().from(groups).where(eq(groups.id, groupId)).for("no key update");
+        await tx.update(groupMembers).set({ removedAt: new Date() }).where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, c.userId)));
+        pending = call(c, "POST", `/api/groups/${groupId}/members`, { email });
+        await Promise.race([pending as Promise<unknown>, new Promise((resolve) => setTimeout(resolve, 400))]);
+      });
+      expect((await pending).statusCode).toBe(404);
+      await call(a, "POST", `/api/groups/${groupId}/members`, { email: "c@example.com" });
+    }
+    expect((await get(a, `/api/groups/${groupId}`)).memberCount).toBe(3);
   });
 
   describe("adding a friend by email", () => {
