@@ -98,13 +98,13 @@ export async function activeCoMemberIds(db: Executor, userId: string): Promise<s
   return rows.map((r) => r.userId);
 }
 
-/** Non-deleted groups both people currently belong to. */
+/** Open (not deleted or archived) groups both people currently belong to. */
 export async function sharedGroups(db: Executor, userId: string, otherUserId: string): Promise<{ id: string; name: string }[]> {
   const rows = await db
     .select({ id: groups.id, name: groups.name, userId: groupMembers.userId })
     .from(groupMembers)
     .innerJoin(groups, eq(groups.id, groupMembers.groupId))
-    .where(and(inArray(groupMembers.userId, [userId, otherUserId]), isNull(groupMembers.removedAt), isNull(groups.deletedAt)));
+    .where(and(inArray(groupMembers.userId, [userId, otherUserId]), isNull(groupMembers.removedAt), isNull(groups.deletedAt), isNull(groups.archivedAt)));
   const mine = new Set(rows.filter((r) => r.userId === userId).map((r) => r.id));
   return rows.filter((r) => r.userId === otherUserId && mine.has(r.id)).map(({ id, name }) => ({ id, name }));
 }

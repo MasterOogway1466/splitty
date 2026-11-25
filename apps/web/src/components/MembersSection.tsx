@@ -42,9 +42,11 @@ export function MembersSection({ group }: { group: GroupDetail }) {
     <section className="mb-6 bg-white border border-line rounded-lg">
       <div className="flex items-center justify-between px-4 py-3.5">
         <h2 className="font-medium text-ink">Members</h2>
-        <button onClick={() => setShowAddMember((v) => !v)} className={linkButtonClass}>
-          {showAddMember ? "Cancel" : "Add member"}
-        </button>
+          {!group.archivedAt && (
+          <button onClick={() => setShowAddMember((v) => !v)} className={linkButtonClass}>
+            {showAddMember ? "Cancel" : "Add member"}
+          </button>
+          )}
       </div>
       {showAddMember && (
         <form onSubmit={handleAddMember} className="mx-4 mb-4 flex gap-2">
@@ -88,7 +90,7 @@ export function MembersSection({ group }: { group: GroupDetail }) {
               <span className={`figure ${m.netBalanceMinor >= 0 ? "text-ledger" : "text-rust"}`}>
                 {m.netBalanceMinor === 0 ? "settled up" : formatMoney(m.netBalanceMinor, currency)}
               </span>
-              {isOwner && m.userId !== user?.id && (
+              {isOwner && !group.archivedAt && m.userId !== user?.id && (
                 <button onClick={() => handleRemove(m.userId)} className="text-xs text-ink-muted hover:text-rust transition-colors">
                   remove
                 </button>

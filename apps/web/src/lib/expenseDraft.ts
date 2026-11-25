@@ -4,6 +4,7 @@ import {
   parseMoneyInput,
   todayCalendarDate,
   type CreateExpenseRequest,
+  type DefaultSplit,
   type Expense,
   type ExpenseSplit,
   type ShareInput,
@@ -24,17 +25,19 @@ export interface ExpenseDraft {
   participantValues: Record<string, string>;
 }
 
-export function emptyDraft(currentUserId: string, memberIds: string[]): ExpenseDraft {
+/** `defaultSplit` is used only while everyone in it is still available. */
+export function emptyDraft(currentUserId: string, memberIds: string[], defaultSplit: DefaultSplit | null = null): ExpenseDraft {
+  const usable = defaultSplit?.values.every((v) => memberIds.includes(v.userId)) ? defaultSplit : null;
   return {
     description: "",
     amount: "",
     expenseDate: todayCalendarDate(),
     categoryId: "",
     notes: "",
-    splitMethod: "equal",
+    splitMethod: usable?.method ?? "equal",
     payerRows: [{ userId: currentUserId, amount: "" }],
-    participants: new Set(memberIds),
-    participantValues: {},
+    participants: new Set(usable ? usable.values.map((v) => v.userId) : memberIds),
+    participantValues: usable && usable.method !== "equal" ? Object.fromEntries(usable.values.map((v) => [v.userId, String(v.value)])) : {},
   };
 }
 

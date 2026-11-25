@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { hundredthsSchema } from "./numbers.js";
 import { CURRENCY_CODES } from "../currency.js";
 
 export const groupTypeValues = ["trip", "house", "couple", "other"] as const;
@@ -21,6 +22,33 @@ export const addGroupMemberRequestSchema = z.object({
   email: z.string().trim().toLowerCase().email(),
 });
 export type AddGroupMemberRequest = z.infer<typeof addGroupMemberRequestSchema>;
+
+/** Pre-fills the expense form. Equal ignores the values. */
+export const defaultSplitSchema = z
+  .object({
+    method: z.enum(["equal", "percentage", "shares"]),
+    values: z.array(z.object({ userId: z.string().uuid(), value: hundredthsSchema(1_000) })).min(1).max(500),
+  })
+  .refine((s) => new Set(s.values.map((v) => v.userId)).size === s.values.length, "Each person can only appear once")
+  .refine(
+    (s) => s.method !== "percentage" || s.values.reduce((sum, v) => sum + Math.round(v.value * 100), 0) === 10_000,
+    "Percentages must add up to 100",
+  );
+export type DefaultSplit = z.infer<typeof defaultSplitSchema>;
+
+export const updateGroupRequestSchema = z
+  .object({
+    name: z.string().trim().min(1).max(100),
+    groupType: z.enum(groupTypeValues),
+    defaultCurrency: z.enum(CURRENCY_CODES),
+    simplifyDebts: z.boolean(),
+    defaultSplit: defaultSplitSchema.nullable(),
+  })
+  .partial()
+  .refine((body) => Object.keys(body).length > 0, "Nothing to change");
+export type UpdateGroupRequest = z.infer<typeof updateGroupRequestSchema>;
+
+export const addFriendRequestSchema = addGroupMemberRequestSchema;
 
 export const setMemberColorRequestSchema = z.object({
   color: z.enum(memberColorValues).nullable(),
@@ -55,5 +83,9 @@ export type GroupSummary = z.infer<typeof groupSummarySchema>;
 
 export const groupDetailSchema = groupSummarySchema.extend({
   members: z.array(groupMemberSchema),
+  archivedAt: z.string().nullable(),
+  // False once anything has been recorded, even if deleted since.
+  canChangeCurrency: z.boolean(),
+  defaultSplit: defaultSplitSchema.nullable(),
 });
 export type GroupDetail = z.infer<typeof groupDetailSchema>;

@@ -19,7 +19,9 @@ import type { Env } from "./env.js";
 import {
   AffectsFormerMemberError,
   AlreadyMemberError,
+  CurrencyLockedError,
   DomainError,
+  GroupArchivedError,
   GroupNotFoundError,
   ExpenseNotFoundError,
   GroupNotSettledError,
@@ -42,6 +44,7 @@ import { registerAuthRoutes } from "./routes/auth.js";
 import { registerBalanceRoutes } from "./routes/balances.js";
 import { registerCategoryRoutes } from "./routes/categories.js";
 import { registerExpenseRoutes } from "./routes/expenses.js";
+import { registerFriendRoutes } from "./routes/friends.js";
 import { registerGroupRoutes } from "./routes/groups.js";
 import { registerInviteRoutes } from "./routes/invites.js";
 import { serializeExpense, serializeSettlement } from "./routes/serializers.js";
@@ -124,7 +127,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
       const serialized = "expense" in current ? serializeExpense(opts.db, current.expense) : serializeSettlement(opts.db, current.settlement);
       return serialized.then((row) => reply.status(409).send({ error: error.code, message: error.message, current: row }));
     }
-    if (error instanceof WrongStateError) {
+    if (error instanceof WrongStateError || error instanceof GroupArchivedError || error instanceof CurrencyLockedError) {
       return reply.status(409).send({ error: error.code, message: error.message });
     }
     if (error instanceof DomainError) {
@@ -152,6 +155,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   await app.register(registerGroupRoutes, { prefix: "/api/groups" });
   await app.register(registerExpenseRoutes, { prefix: "/api/expenses" });
   await app.register(registerCategoryRoutes, { prefix: "/api/categories" });
+  await app.register(registerFriendRoutes, { prefix: "/api/friends" });
   await app.register(registerSettlementRoutes, { prefix: "/api/settlements" });
   await app.register(registerInviteRoutes, { prefix: "/api/invites" });
   await app.register(registerActivityRoutes, { prefix: "/api/activity" });

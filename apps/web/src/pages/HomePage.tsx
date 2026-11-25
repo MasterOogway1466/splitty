@@ -1,13 +1,15 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { CURRENCY_CODES, formatMoney } from "@splitty/shared";
+import { CURRENCY_CODES, formatMoney, type GroupSummary } from "@splitty/shared";
 import { AppShell } from "../components/AppShell.js";
-import { useCreateGroup, useGlobalBalance, useGroups } from "../lib/hooks.js";
+import { useCreateGroup, useGlobalBalance, useGroupAction, useGroups } from "../lib/hooks.js";
 
 export function HomePage() {
   const groupsQuery = useGroups();
   const balanceQuery = useGlobalBalance();
   const createGroup = useCreateGroup();
+  const archivedQuery = useGroups("archived");
+  const deletedQuery = useGroups("deleted");
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
   const [currency, setCurrency] = useState("USD");
@@ -122,6 +124,45 @@ export function HomePage() {
           </div>
         )}
       </section>
+
+      <OtherGroups title="Archived groups" groups={archivedQuery.data ?? []} />
+      <OtherGroups title="Deleted groups" groups={deletedQuery.data ?? []} restorable />
     </AppShell>
+  );
+}
+
+function OtherGroups({ title, groups, restorable = false }: { title: string; groups: GroupSummary[]; restorable?: boolean }) {
+  if (groups.length === 0) return null;
+  return (
+    <details className="mt-8 text-sm">
+      <summary className="cursor-pointer text-ink-muted">
+        {title} ({groups.length})
+      </summary>
+      <ul className="mt-2 bg-white border border-line rounded-lg divide-y divide-line">
+        {groups.map((group) => (
+          <li key={group.id} className="flex items-center justify-between px-4 py-3">
+            {restorable ? (
+              <>
+                <span className="text-ink-muted">{group.name}</span>
+                <RestoreGroup groupId={group.id} />
+              </>
+            ) : (
+              <Link to={`/groups/${group.id}`} className="text-ink hover:text-ledger">
+                {group.name}
+              </Link>
+            )}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+function RestoreGroup({ groupId }: { groupId: string }) {
+  const action = useGroupAction(groupId);
+  return (
+    <button onClick={() => action.mutate("restore")} disabled={action.isPending} className="text-ink-muted hover:text-ledger">
+      Restore
+    </button>
   );
 }

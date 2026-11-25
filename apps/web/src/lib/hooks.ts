@@ -10,7 +10,7 @@ import type {
   CurrencyBalance,
   Expense,
   ExpenseHistoryEntry,
-  GroupDebt,
+  GroupDebts,
   GroupDetail,
   GroupSummary,
   InviteInfo,
@@ -21,6 +21,7 @@ import type {
   Settlement,
   SettlementHistoryEntry,
   UpdateExpenseRequest,
+  UpdateGroupRequest,
   UpdateProfileRequest,
   UpdateSettlementRequest,
   UserProfile,
@@ -41,8 +42,35 @@ function useRetryableCreate<Input extends object, Result>(send: (input: Input) =
   };
 }
 
-export function useGroups(): UseQueryResult<GroupSummary[]> {
-  return useQuery({ queryKey: ["groups"], queryFn: () => apiGet("/groups") as Promise<GroupSummary[]> });
+export function useGroups(which: "active" | "archived" | "deleted" = "active"): UseQueryResult<GroupSummary[]> {
+  return useQuery({
+    queryKey: which === "active" ? ["groups"] : ["groups", { which }],
+    queryFn: () => apiGet(which === "active" ? "/groups" : `/groups?${which}=true`) as Promise<GroupSummary[]>,
+  });
+}
+
+export function useUpdateGroup(groupId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateGroupRequest) => apiPatch(`/groups/${groupId}`, input) as Promise<GroupDetail>,
+    onSuccess: () => queryClient.invalidateQueries(),
+  });
+}
+
+export function useGroupAction(groupId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (action: "archive" | "unarchive" | "restore") => apiPost(`/groups/${groupId}/${action}`),
+    onSuccess: () => queryClient.invalidateQueries(),
+  });
+}
+
+export function useAddFriend() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (email: string) => apiPost("/friends", { email }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["balances"] }),
+  });
 }
 
 export function useGroup(groupId: string | null): UseQueryResult<GroupDetail> {
@@ -84,8 +112,8 @@ export function useSettlements(scope: ListScope, deleted = false) {
   return useEntries<Settlement>("settlements", scope, deleted);
 }
 
-export function useGroupDebts(groupId: string): UseQueryResult<GroupDebt[]> {
-  return useQuery({ queryKey: ["groups", groupId, "debts"], queryFn: () => apiGet(`/groups/${groupId}/debts`) as Promise<GroupDebt[]> });
+export function useGroupDebts(groupId: string): UseQueryResult<GroupDebts> {
+  return useQuery({ queryKey: ["groups", groupId, "debts"], queryFn: () => apiGet(`/groups/${groupId}/debts`) as Promise<GroupDebts> });
 }
 
 export function usePerson(personId: string): UseQueryResult<PersonBalance> {

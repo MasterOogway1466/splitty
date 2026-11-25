@@ -10,6 +10,13 @@ export const activityTypeValues = [
   "settlement_updated",
   "settlement_deleted",
   "settlement_restored",
+  "group_updated",
+  "group_archived",
+  "group_unarchived",
+  "group_deleted",
+  "group_restored",
+  "member_added",
+  "member_removed",
 ] as const;
 
 export const activityItemSchema = z.object({

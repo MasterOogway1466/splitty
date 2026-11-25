@@ -128,3 +128,29 @@ export function attributeDebts(netById: Map<string, MinorUnits>): PairwiseDebt[]
   }
   return debts;
 }
+
+/**
+ * Few payments that clear everyone's net position (docs/PLAN-PUBLIC.md §7):
+ * repeatedly the largest debtor pays the largest creditor, ties to the
+ * lower id. At most one payment fewer than there are people involved. It
+ * changes who pays whom but never anyone's net.
+ */
+export function simplifyDebts(netById: Map<string, MinorUnits>): PairwiseDebt[] {
+  if (sumMinor(netById.values()) !== 0) {
+    throw new Error("simplifyDebts requires net positions that sum to zero");
+  }
+  const open = [...netById].filter(([, net]) => net !== 0).map(([id, net]) => ({ id, net }));
+  const largest = (sign: 1 | -1) =>
+    open.reduce((best, p) => (p.net * sign > best.net * sign || (p.net === best.net && p.id < best.id) ? p : best));
+
+  const payments: PairwiseDebt[] = [];
+  while (open.some((p) => p.net !== 0)) {
+    const debtor = largest(-1);
+    const creditor = largest(1);
+    const amountMinor = Math.min(-debtor.net, creditor.net);
+    payments.push({ fromId: debtor.id, toId: creditor.id, amountMinor });
+    debtor.net += amountMinor;
+    creditor.net -= amountMinor;
+  }
+  return payments;
+}

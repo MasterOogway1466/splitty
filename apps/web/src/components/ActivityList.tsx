@@ -12,6 +12,13 @@ const VERBS: Record<ActivityItem["type"], string> = {
   settlement_updated: "edited a payment of",
   settlement_deleted: "deleted a payment of",
   settlement_restored: "restored a payment of",
+  group_updated: "changed the settings of",
+  group_archived: "archived",
+  group_unarchived: "unarchived",
+  group_deleted: "deleted",
+  group_restored: "restored",
+  member_added: "added",
+  member_removed: "removed",
 };
 
 export function ActivityList({ items, showGroup }: { items: ActivityItem[]; showGroup: boolean }) {
@@ -21,18 +28,13 @@ export function ActivityList({ items, showGroup }: { items: ActivityItem[]; show
     <ul className="divide-y divide-line">
       {items.map((item) => (
         <li key={item.id} className="px-4 py-3 text-sm text-ink">
-          {item.actorId === user?.id ? "You" : item.actorDisplayName} {VERBS[item.type]}{" "}
-          {item.entityLabel !== null ? (
-            <Link
-              to={`/${item.entityType === "expense" ? "expenses" : "settlements"}/${item.entityId}`}
-              className="font-medium hover:text-ledger transition-colors"
-            >
-              {item.entityLabel}
-            </Link>
-          ) : item.entityType === "expense" ? (
-            "an expense"
+          {item.actorId === user?.id ? "You" : item.actorDisplayName}{" "}
+          {item.type === "member_removed" && item.entityId === item.actorId ? (
+            "left the group"
           ) : (
-            "an unknown amount"
+            <>
+              {VERBS[item.type]} <Subject item={item} />
+            </>
           )}
           <p className="text-xs text-ink-muted">
             {showGroup && item.groupName && `${item.groupName} · `}
@@ -41,5 +43,18 @@ export function ActivityList({ items, showGroup }: { items: ActivityItem[]; show
         </li>
       ))}
     </ul>
+  );
+}
+
+function Subject({ item }: { item: ActivityItem }) {
+  if (item.entityLabel === null) {
+    return <>{{ expense: "an expense", settlement: "an unknown amount", group: "a group", member: "a member" }[item.entityType] ?? ""}</>;
+  }
+  const path = { expense: "expenses", settlement: "settlements", group: "groups" }[item.entityType];
+  if (!path) return <span className="font-medium">{item.entityLabel}</span>;
+  return (
+    <Link to={`/${path}/${item.entityId}`} className="font-medium hover:text-ledger transition-colors">
+      {item.entityLabel}
+    </Link>
   );
 }

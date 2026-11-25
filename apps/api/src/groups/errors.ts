@@ -106,6 +106,18 @@ export class NotConnectedError extends DomainError {
   }
 }
 
+export class GroupArchivedError extends DomainError {
+  constructor() {
+    super("This group is archived. Unarchive it to make changes.", "group_archived");
+  }
+}
+
+export class CurrencyLockedError extends DomainError {
+  constructor() {
+    super("The currency can't change once expenses or payments have been recorded", "currency_locked");
+  }
+}
+
 export class NotGroupOwnerError extends DomainError {
   constructor() {
     super("Only this group's owner can do this", "not_group_owner");
@@ -116,7 +128,7 @@ export class NotGroupOwnerError extends DomainError {
  * member's balance must be zero, not just one target member's. */
 export class GroupNotSettledError extends DomainError {
   constructor() {
-    super("Everyone in this group must be settled up before it can be deleted", "group_not_settled");
+    super("Everyone in this group must be settled up first", "group_not_settled");
   }
 }
 
