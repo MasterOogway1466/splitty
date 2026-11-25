@@ -8,3 +8,4 @@ export * from "./schemas/settlements.js";
 export * from "./schemas/invites.js";
 export * from "./schemas/activity.js";
 export * from "./schemas/balances.js";
+export * from "./schemas/paging.js";

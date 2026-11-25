@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { CURRENCY_CODES } from "../currency.js";
 import { MAX_AMOUNT_MINOR, MAX_SHARES } from "../money.js";
+import { calendarDateSchema } from "./dates.js";
 import { uuidv7Schema } from "./ids.js";
 
 /** Positive, at most two decimals: splits are computed on whole hundredths. */
@@ -48,16 +49,6 @@ export const splitSchema = z.discriminatedUnion("splitMethod", [
 ]);
 export type ExpenseSplit = z.infer<typeof splitSchema>;
 
-/** A calendar date, not an instant: it means the same day everywhere. */
-export const calendarDateSchema = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD")
-  .refine((v) => {
-    const date = new Date(`${v}T00:00:00Z`);
-    return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === v;
-  }, "Not a real date")
-  .refine((v) => v >= "1900-01-01" && v <= "2999-12-31", "Date out of range");
-
 const expenseFieldsSchema = z.object({
     description: z.string().trim().min(1).max(200),
     notes: z.string().trim().max(2000).optional(),
@@ -76,7 +67,7 @@ export type CreateExpenseRequest = z.infer<typeof createExpenseRequestSchema>;
 export const updateExpenseRequestSchema = expenseFieldsSchema.extend({ version: z.number().int().positive() }).and(splitSchema);
 export type UpdateExpenseRequest = z.infer<typeof updateExpenseRequestSchema>;
 
-export const expenseVersionRequestSchema = z.object({ version: z.number().int().positive() });
+export const versionRequestSchema = z.object({ version: z.number().int().positive() });
 
 /** What was entered for a participant, as opposed to what it came to. */
 export const shareInputSchema = z.discriminatedUnion("type", [

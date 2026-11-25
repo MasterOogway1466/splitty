@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { readActivity } from "../activity/read.js";
+import { listQuery } from "./paging.js";
 import { authenticateVerified } from "../plugins/authenticate.js";
 
 /** Global activity feed — every group-scoped and direct event where the
@@ -7,5 +8,5 @@ import { authenticateVerified } from "../plugins/authenticate.js";
 export async function registerActivityRoutes(app: FastifyInstance): Promise<void> {
   app.addHook("preHandler", (request, reply) => authenticateVerified(app, request, reply));
 
-  app.get("/", async (request) => readActivity(app.db, request.currentUser!.id));
+  app.get("/", async (request) => readActivity(app.db, request.currentUser!.id, listQuery(request)));
 }

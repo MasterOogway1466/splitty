@@ -1,5 +1,5 @@
 import { and, eq, exists, inArray, isNull, or, sql } from "drizzle-orm";
-import { attributeDebts } from "@splitty/shared";
+import { attributeDebts, type GroupDebt } from "@splitty/shared";
 import type { Executor } from "../db/client.js";
 import { expenseParticipants, expensePayers, expenses, settlements } from "../db/schema.js";
 
@@ -31,35 +31,44 @@ export type CurrencyBalanceMap = Map<string, number>; // currency -> net minor u
 /** Net position (paid − owed, settlement-adjusted) per member, within one
  * group. Positive = the group owes them; negative = they owe the group. */
 export async function computeGroupBalances(db: Executor, groupId: string): Promise<BalanceMap> {
-  const balances: BalanceMap = new Map();
-  const add = (userId: string, delta: number) => balances.set(userId, (balances.get(userId) ?? 0) + delta);
+  return (await computeBalancesByGroup(db, [groupId])).get(groupId)!;
+}
+
+/** computeGroupBalances for several groups in one round of queries. */
+export async function computeBalancesByGroup(db: Executor, groupIds: string[]): Promise<Map<string, BalanceMap>> {
+  const result = new Map<string, BalanceMap>(groupIds.map((id) => [id, new Map()]));
+  if (groupIds.length === 0) return result;
+  const add = (groupId: string | null, userId: string, delta: number) => {
+    const balances = result.get(groupId!)!;
+    balances.set(userId, (balances.get(userId) ?? 0) + delta);
+  };
 
   const paidRows = await db
-    .select({ userId: expensePayers.userId, amountMinor: expensePayers.amountMinor })
+    .select({ groupId: expenses.groupId, userId: expensePayers.userId, amountMinor: expensePayers.amountMinor })
     .from(expensePayers)
     .innerJoin(expenses, eq(expensePayers.expenseId, expenses.id))
-    .where(and(eq(expenses.groupId, groupId), isNull(expenses.deletedAt)));
-  for (const row of paidRows) add(row.userId, row.amountMinor);
+    .where(and(inArray(expenses.groupId, groupIds), isNull(expenses.deletedAt)));
+  for (const row of paidRows) add(row.groupId, row.userId, row.amountMinor);
 
   const owedRows = await db
-    .select({ userId: expenseParticipants.userId, owedAmountMinor: expenseParticipants.owedAmountMinor })
+    .select({ groupId: expenses.groupId, userId: expenseParticipants.userId, owedAmountMinor: expenseParticipants.owedAmountMinor })
     .from(expenseParticipants)
     .innerJoin(expenses, eq(expenseParticipants.expenseId, expenses.id))
-    .where(and(eq(expenses.groupId, groupId), isNull(expenses.deletedAt)));
-  for (const row of owedRows) add(row.userId, -row.owedAmountMinor);
+    .where(and(inArray(expenses.groupId, groupIds), isNull(expenses.deletedAt)));
+  for (const row of owedRows) add(row.groupId, row.userId, -row.owedAmountMinor);
 
   const settlementRows = await db
-    .select({ fromUserId: settlements.fromUserId, toUserId: settlements.toUserId, amountMinor: settlements.amountMinor })
+    .select()
     .from(settlements)
-    .where(and(eq(settlements.groupId, groupId), isNull(settlements.deletedAt)));
+    .where(and(inArray(settlements.groupId, groupIds), isNull(settlements.deletedAt)));
   for (const row of settlementRows) {
     // Paying down a debt moves you toward zero/positive; receiving a
     // payment reduces what's owed to you.
-    add(row.fromUserId, row.amountMinor);
-    add(row.toUserId, -row.amountMinor);
+    add(row.groupId, row.fromUserId, row.amountMinor);
+    add(row.groupId, row.toUserId, -row.amountMinor);
   }
 
-  return balances;
+  return result;
 }
 
 /**
@@ -80,11 +89,25 @@ export async function computePairwiseBalances(db: Executor, userId: string, othe
  * their user id. */
 export async function computeAllPairwiseBalances(db: Executor, userId: string): Promise<Map<string, CurrencyBalanceMap>> {
   const result = new Map<string, CurrencyBalanceMap>();
-  const add = (otherUserId: string, currency: string, delta: number) => {
+  for (const { otherUserId, currency, deltaMinor } of await pairwiseFlows(db, userId)) {
     const net = result.get(otherUserId) ?? new Map<string, number>();
-    net.set(currency, (net.get(currency) ?? 0) + delta);
+    net.set(currency, (net.get(currency) ?? 0) + deltaMinor);
     result.set(otherUserId, net);
-  };
+  }
+  return result;
+}
+
+export interface PairwiseFlow {
+  otherUserId: string;
+  groupId: string | null;
+  currency: string;
+  /** Positive: the other person's debt to the user goes up. */
+  deltaMinor: number;
+}
+
+/** Every individual movement between the user and anyone else. */
+export async function pairwiseFlows(db: Executor, userId: string): Promise<PairwiseFlow[]> {
+  const result: PairwiseFlow[] = [];
 
   // Attribution needs every payer and participant of an expense, not just
   // the two people being compared.
@@ -100,7 +123,7 @@ export async function computeAllPairwiseBalances(db: Executor, userId: string): 
       ),
     ),
   );
-  const myExpenses = await db.select({ id: expenses.id, currency: expenses.currency }).from(expenses).where(involvesUser);
+  const myExpenses = await db.select({ id: expenses.id, currency: expenses.currency, groupId: expenses.groupId }).from(expenses).where(involvesUser);
 
   if (myExpenses.length > 0) {
     const expenseIds = myExpenses.map((e) => e.id);
@@ -116,8 +139,9 @@ export async function computeAllPairwiseBalances(db: Executor, userId: string): 
 
     for (const expense of myExpenses) {
       for (const debt of attributeDebts(netsByExpense.get(expense.id)!)) {
-        if (debt.toId === userId) add(debt.fromId, expense.currency, debt.amountMinor);
-        else if (debt.fromId === userId) add(debt.toId, expense.currency, -debt.amountMinor);
+        const { currency, groupId } = expense;
+        if (debt.toId === userId) result.push({ otherUserId: debt.fromId, groupId, currency, deltaMinor: debt.amountMinor });
+        else if (debt.fromId === userId) result.push({ otherUserId: debt.toId, groupId, currency, deltaMinor: -debt.amountMinor });
       }
     }
   }
@@ -131,11 +155,76 @@ export async function computeAllPairwiseBalances(db: Executor, userId: string): 
     if (row.fromUserId === row.toUserId) continue;
     // userId paid the other -> the other's net debt to userId goes up
     // (toward less negative / more positive).
-    if (row.fromUserId === userId) add(row.toUserId, row.currency, row.amountMinor);
-    else add(row.fromUserId, row.currency, -row.amountMinor);
+    const paid = row.fromUserId === userId;
+    result.push({
+      otherUserId: paid ? row.toUserId : row.fromUserId,
+      groupId: row.groupId,
+      currency: row.currency,
+      deltaMinor: paid ? row.amountMinor : -row.amountMinor,
+    });
   }
 
   return result;
+}
+
+/** Payments that would clear every current member's balance in a group.
+ * Members who owe each other directly are paired as recorded. Debts that
+ * run through someone who has left (their own net is zero) are passed on to
+ * the members at either end. */
+export async function computeGroupDebts(db: Executor, groupId: string, activeMemberIds: Set<string>): Promise<GroupDebt[]> {
+  const paid = await db
+    .select({ expenseId: expenses.id, userId: expensePayers.userId, amountMinor: expensePayers.amountMinor })
+    .from(expensePayers)
+    .innerJoin(expenses, eq(expenses.id, expensePayers.expenseId))
+    .where(and(eq(expenses.groupId, groupId), isNull(expenses.deletedAt)));
+  const owed = await db
+    .select({ expenseId: expenses.id, userId: expenseParticipants.userId, amountMinor: expenseParticipants.owedAmountMinor })
+    .from(expenseParticipants)
+    .innerJoin(expenses, eq(expenses.id, expenseParticipants.expenseId))
+    .where(and(eq(expenses.groupId, groupId), isNull(expenses.deletedAt)));
+  const settled = await db
+    .select({ fromId: settlements.fromUserId, toId: settlements.toUserId, amountMinor: settlements.amountMinor })
+    .from(settlements)
+    .where(and(eq(settlements.groupId, groupId), isNull(settlements.deletedAt)));
+
+  const netsByExpense = new Map<string, Map<string, number>>();
+  const addNet = (expenseId: string, userId: string, delta: number) => {
+    const nets = netsByExpense.get(expenseId) ?? new Map<string, number>();
+    nets.set(userId, (nets.get(userId) ?? 0) + delta);
+    netsByExpense.set(expenseId, nets);
+  };
+  for (const row of paid) addNet(row.expenseId, row.userId, row.amountMinor);
+  for (const row of owed) addNet(row.expenseId, row.userId, -row.amountMinor);
+
+  const debts = [...netsByExpense.values()].flatMap((nets) => attributeDebts(nets));
+  for (const s of settled) {
+    if (s.fromId !== s.toId) debts.push({ fromId: s.toId, toId: s.fromId, amountMinor: s.amountMinor });
+  }
+
+  const viaFormer = new Map<string, number>();
+  const direct = new Map<string, number>(); // "low:high" -> what low owes high
+  const addDirect = (fromId: string, toId: string, amount: number) => {
+    const [low, high, signed] = fromId < toId ? [fromId, toId, amount] : [toId, fromId, -amount];
+    direct.set(`${low}:${high}`, (direct.get(`${low}:${high}`) ?? 0) + signed);
+  };
+  for (const { fromId, toId, amountMinor } of debts) {
+    if (activeMemberIds.has(fromId) && activeMemberIds.has(toId)) {
+      addDirect(fromId, toId, amountMinor);
+    } else {
+      viaFormer.set(fromId, (viaFormer.get(fromId) ?? 0) - amountMinor);
+      viaFormer.set(toId, (viaFormer.get(toId) ?? 0) + amountMinor);
+    }
+  }
+  for (const { fromId, toId, amountMinor } of attributeDebts(viaFormer)) addDirect(fromId, toId, amountMinor);
+
+  return [...direct]
+    .filter(([, amount]) => amount !== 0)
+    .map(([key, amount]) => {
+      const [low, high] = key.split(":") as [string, string];
+      return amount > 0
+        ? { fromUserId: low, toUserId: high, amountMinor: amount }
+        : { fromUserId: high, toUserId: low, amountMinor: -amount };
+    });
 }
 
 /** Global net position for one user across every group and direct expense

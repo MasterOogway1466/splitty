@@ -1,19 +1,22 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
-import { formatCalendarDate, formatMoney, todayCalendarDate, type Expense, type GroupDetail } from "@splitty/shared";
+import { todayCalendarDate, type Expense, type GroupDetail } from "@splitty/shared";
 import { useAuth } from "../lib/AuthContext.js";
 import { draftFromExpense, emptyDraft, type ExpenseDraft } from "../lib/expenseDraft.js";
-import { useCreateGroupExpense, useGroupExpenses } from "../lib/hooks.js";
-import { personLabel } from "../lib/members.js";
+import { useCreateExpense, useCreateSettlement, useExpenses, useGroupDebts } from "../lib/hooks.js";
 import { ExpenseForm } from "./ExpenseForm.js";
+import { ExpenseRows } from "./ExpenseRows.js";
+import { LoadMore } from "./LoadMore.js";
 import { SettleForm } from "./SettleForm.js";
 import { cardClass, linkButtonClass } from "./styles.js";
 
 export function ExpensesSection({ group }: { group: GroupDetail }) {
   const { user } = useAuth();
   const [showDeleted, setShowDeleted] = useState(false);
-  const expensesQuery = useGroupExpenses(group.id, showDeleted);
-  const createExpense = useCreateGroupExpense(group.id);
+  const expensesQuery = useExpenses({ groupId: group.id }, showDeleted);
+  const createExpense = useCreateExpense(group.id);
+  const createSettlement = useCreateSettlement(group.id);
+  const debtsQuery = useGroupDebts(group.id);
+  const expenses = expensesQuery.data?.pages.flatMap((p) => p.items) ?? [];
   const [showSettle, setShowSettle] = useState(false);
   // `key` remounts the form, so opening it again starts from the new draft.
   const [form, setForm] = useState<{ key: number; draft: ExpenseDraft } | null>(null);
@@ -37,9 +40,19 @@ export function ExpensesSection({ group }: { group: GroupDetail }) {
         </div>
       </div>
 
-      {showSettle && (
+      {showSettle && debtsQuery.data && (
         <div className="mx-4 mb-4">
-          <SettleForm group={group} onDone={() => setShowSettle(false)} />
+          <SettleForm
+            people={group.members}
+            currency={group.defaultCurrency}
+            currentUserId={user?.id}
+            suggestions={debtsQuery.data}
+            onSubmit={async (request) => {
+              await createSettlement.mutateAsync(request);
+              setShowSettle(false);
+            }}
+            onCancel={() => setShowSettle(false)}
+          />
         </div>
       )}
       {form && (
@@ -60,36 +73,11 @@ export function ExpensesSection({ group }: { group: GroupDetail }) {
         </div>
       )}
 
-      {expensesQuery.data?.length === 0 && (
+      {expensesQuery.data && expenses.length === 0 && (
         <p className="text-sm text-ink-muted px-4 pb-4">{showDeleted ? "Nothing deleted." : "No expenses yet."}</p>
       )}
-      {expensesQuery.data && expensesQuery.data.length > 0 && (
-        <div className="divide-y divide-line border-t border-line">
-          {expensesQuery.data.map((expense) => (
-            <div key={expense.id} className="text-sm flex items-center justify-between px-4 py-3">
-              <div>
-                <Link to={`/expenses/${expense.id}`} className="text-ink hover:text-ledger transition-colors">
-                  {expense.description}
-                </Link>
-                <p className="text-xs text-ink-muted">
-                  {expense.payers.map((p) => personLabel(p, user?.id)).join(", ")} paid · {formatCalendarDate(expense.expenseDate)}
-                  {!showDeleted && (
-                    <>
-                      {" · "}
-                      <button onClick={() => duplicate(expense)} className="hover:text-ledger transition-colors">
-                        Duplicate
-                      </button>
-                    </>
-                  )}
-                </p>
-              </div>
-              <span className={`figure font-medium ${showDeleted ? "text-ink-muted line-through" : "text-ink"}`}>
-                {formatMoney(expense.amountMinor, expense.currency)}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
+      {expenses.length > 0 && <ExpenseRows expenses={expenses} onDuplicate={duplicate} />}
+      <LoadMore query={expensesQuery} />
       <div className="px-4 py-3 border-t border-line">
         <button onClick={() => setShowDeleted((v) => !v)} className="text-xs text-ink-muted hover:text-ledger transition-colors">
           {showDeleted ? "Back to expenses" : "Show deleted"}

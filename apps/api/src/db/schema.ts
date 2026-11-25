@@ -324,7 +324,7 @@ export const expensePayers = pgTable(
       .references(() => users.id),
     amountMinor: bigint("amount_minor", { mode: "number" }).notNull(),
   },
-  (table) => [primaryKey({ columns: [table.expenseId, table.userId] })],
+  (table) => [primaryKey({ columns: [table.expenseId, table.userId] }), index("expense_payers_user_idx").on(table.userId)],
 );
 
 export const expenseParticipants = pgTable(
@@ -339,7 +339,7 @@ export const expenseParticipants = pgTable(
     owedAmountMinor: bigint("owed_amount_minor", { mode: "number" }).notNull(),
     shareInput: jsonb("share_input"),
   },
-  (table) => [primaryKey({ columns: [table.expenseId, table.userId] })],
+  (table) => [primaryKey({ columns: [table.expenseId, table.userId] }), index("expense_participants_user_idx").on(table.userId)],
 );
 
 export const expenseLineItems = pgTable("expense_line_items", {
@@ -389,7 +389,7 @@ export const expenseEditHistory = pgTable("expense_edit_history", {
   editedAt: timestamp("edited_at", { withTimezone: true }).notNull().default(sql`now()`),
   changeType: text("change_type", { enum: changeTypeValues }).notNull(),
   diff: jsonb("diff"),
-});
+}, (table) => [index("expense_edit_history_expense_idx").on(table.expenseId)]);
 
 export const settlementMethodValues = ["cash", "bank_transfer", "upi", "other"] as const;
 
@@ -414,7 +414,8 @@ export const settlements = pgTable(
     fxRate: numeric("fx_rate", { precision: 20, scale: 10 }).notNull(),
     method: text("method", { enum: settlementMethodValues }).notNull(),
     note: text("note"),
-    settledAt: timestamp("settled_at", { withTimezone: true }).notNull(),
+    // A calendar date, not an instant (§6).
+    settledAt: date("settled_at", { mode: "string" }).notNull(),
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id),
@@ -422,8 +423,31 @@ export const settlements = pgTable(
     requestHash: text("request_hash"),
     version: integer("version").notNull().default(1),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),
   },
-  (table) => [index("settlements_group_idx").on(table.groupId)],
+  (table) => [
+    index("settlements_group_idx").on(table.groupId),
+    index("settlements_from_idx").on(table.fromUserId),
+    index("settlements_to_idx").on(table.toUserId),
+  ],
+);
+
+export const settlementEditHistory = pgTable(
+  "settlement_edit_history",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    settlementId: uuid("settlement_id")
+      .notNull()
+      .references(() => settlements.id),
+    editedBy: uuid("edited_by")
+      .notNull()
+      .references(() => users.id),
+    editedAt: timestamp("edited_at", { withTimezone: true }).notNull().default(sql`now()`),
+    changeType: text("change_type", { enum: changeTypeValues }).notNull(),
+    diff: jsonb("diff"),
+  },
+  (table) => [index("settlement_edit_history_settlement_idx").on(table.settlementId)],
 );
 
 // ---------------------------------------------------------------------------
@@ -437,7 +461,9 @@ export const activityTypeValues = [
   "expense_restored",
   "comment_added",
   "settlement_created",
+  "settlement_updated",
   "settlement_deleted",
+  "settlement_restored",
 ] as const;
 
 export const activityFeed = pgTable(

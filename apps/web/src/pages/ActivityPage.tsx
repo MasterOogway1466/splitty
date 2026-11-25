@@ -1,5 +1,6 @@
 import { ActivityList } from "../components/ActivityList.js";
 import { AppShell } from "../components/AppShell.js";
+import { LoadMore } from "../components/LoadMore.js";
 import { cardClass } from "../components/styles.js";
 import { useActivity } from "../lib/hooks.js";
 
@@ -13,7 +14,8 @@ export function ActivityPage() {
       {activityQuery.isError && <p className="text-sm text-rust">Couldn't load activity.</p>}
       {activityQuery.data && (
         <div className={cardClass}>
-          <ActivityList items={activityQuery.data} showGroup />
+          <ActivityList items={activityQuery.data.pages.flatMap((p) => p.items)} showGroup />
+          <LoadMore query={activityQuery} />
         </div>
       )}
     </AppShell>

@@ -7,7 +7,9 @@ export const activityTypeValues = [
   "expense_restored",
   "comment_added",
   "settlement_created",
+  "settlement_updated",
   "settlement_deleted",
+  "settlement_restored",
 ] as const;
 
 export const activityItemSchema = z.object({

@@ -99,10 +99,10 @@ describe("cross-account data isolation (docs/PLAN-PUBLIC.md §5/§12)", () => {
     // Mallory's own direct-expense list must not include Bob and Carol's IOU.
     const listRes = await ctx.app.inject({ method: "GET", url: "/api/expenses", headers: authHeader(mallory.accessToken) });
     expect(listRes.statusCode).toBe(200);
-    expect(listRes.json()).toEqual([]);
+    expect(listRes.json().items).toEqual([]);
 
     // Bob and Carol's own lists, by contrast, do include it.
     const bobListRes = await ctx.app.inject({ method: "GET", url: "/api/expenses", headers: authHeader(bob.accessToken) });
-    expect(bobListRes.json()).toHaveLength(1);
+    expect(bobListRes.json().items).toHaveLength(1);
   });
 });

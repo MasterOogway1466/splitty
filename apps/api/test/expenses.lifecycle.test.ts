@@ -83,8 +83,8 @@ describe("expense lifecycle (docs/PLAN-PUBLIC.md Phase 2B)", () => {
     const { id } = await create();
     expect((await del(c, id, 1)).statusCode).toBe(200);
     expect(await nets()).toEqual([0, 0, 0]);
-    expect((await call(a, "GET", `/api/groups/${groupId}/expenses`)).json()).toEqual([]);
-    expect((await call(a, "GET", `/api/groups/${groupId}/expenses?deleted=true`)).json()).toHaveLength(1);
+    expect((await call(a, "GET", `/api/groups/${groupId}/expenses`)).json().items).toEqual([]);
+    expect((await call(a, "GET", `/api/groups/${groupId}/expenses?deleted=true`)).json().items).toHaveLength(1);
     expect((await call(a, "GET", `/api/expenses/${id}`)).json().deletedAt).not.toBeNull();
     expect((await edit(a, id, 2)).statusCode).toBe(409);
     expect((await del(a, id, 2)).statusCode).toBe(409);
@@ -221,8 +221,59 @@ describe("expense lifecycle (docs/PLAN-PUBLIC.md Phase 2B)", () => {
     });
   });
 
+  describe("direct expenses between people who don't all know each other", () => {
+    let x: User;
+    const direct = (payers: [User, number][], owes: [User, number][]) => ({
+      description: "D", amountMinor: payers.reduce((s, [, n]) => s + n, 0), currency: "USD", splitMethod: "exact",
+      payers: payers.map(([u, amountMinor]) => ({ userId: u.userId, amountMinor })),
+      participants: owes.map(([u, amountMinor]) => ({ userId: u.userId, amountMinor })),
+    });
+    const put = (user: User, id: string, version: number, payload: object) => call(user, "PUT", `/api/expenses/${id}`, { version, ...payload });
+    beforeEach(async () => {
+      x = await createVerifiedUser(ctx, { email: "x@example.com", password: "password123", displayName: "x" });
+      // x shares a group with b only.
+      const g = (await call(b, "POST", "/api/groups", { name: "BX", defaultCurrency: "USD" })).json().id;
+      await call(b, "POST", `/api/groups/${g}/members`, { email: "x@example.com" });
+    });
+
+    it("an edit cannot add someone the creator isn't connected to", async () => {
+      const { id } = (await call(a, "POST", "/api/expenses", direct([[a, 100]], [[b, 100]]))).json();
+      const res = await put(b, id, 1, direct([[a, 100]], [[b, 50], [x, 50]]));
+      expect([res.statusCode, res.json().error]).toEqual([403, "not_connected"]);
+      expect((await call(x, "POST", "/api/expenses", direct([[x, 1]], [[a, 1]]))).statusCode).toBe(403);
+    });
+
+    it("an edit cannot shift who a stranger owes, even if their total stays the same", async () => {
+      // Created by b: a and c pay; b and x owe. x is a stranger to a and c.
+      const { id } = (await call(b, "POST", "/api/expenses", direct([[a, 100], [c, 100]], [[b, 100], [x, 100]]))).json();
+      const shifted = direct([[a, 150], [c, 50]], [[b, 100], [x, 100]]);
+      expect((await put(a, id, 1, shifted)).statusCode).toBe(403);
+      expect((await put(b, id, 1, shifted)).statusCode).toBe(200);
+    });
+
+    it("replaying a create after being removed from the expense reveals nothing", async () => {
+      const id = uuidv7();
+      const payload = { id, ...direct([[a, 100]], [[b, 60], [c, 40]]) };
+      await call(a, "POST", "/api/expenses", payload);
+      expect((await put(b, id, 1, { ...direct([[c, 100]], [[b, 100]]), description: "Private" })).statusCode).toBe(200);
+      const replay = await call(a, "POST", "/api/expenses", payload);
+      expect(replay.statusCode).toBe(404);
+      expect(replay.body).not.toContain("Private");
+    });
+
+    it("history shows only the versions the reader was part of", async () => {
+      const { id } = (await call(a, "POST", "/api/expenses", { ...direct([[a, 100]], [[b, 100]]), notes: "private" })).json();
+      await put(a, id, 1, direct([[a, 100]], [[b, 60], [c, 40]]));
+      const history = (await call(c, "GET", `/api/expenses/${id}/history`)).json();
+      expect(JSON.stringify(history)).not.toContain("private");
+      expect([history[0].before, history[1].after]).toEqual([null, null]);
+      expect(history[0].after).not.toBeNull();
+      expect((await call(a, "GET", `/api/expenses/${id}/history`)).json()[1].after).not.toBeNull();
+    });
+  });
+
   describe("activity", () => {
-    const feed = async (user: User, url = "/api/activity") => (await call(user, "GET", url)).json();
+    const feed = async (user: User, url = "/api/activity") => (await call(user, "GET", url)).json().items;
 
     it("reaches every group member, names the expense, and covers each change", async () => {
       const { id } = await create({ participantUserIds: [a.userId] });

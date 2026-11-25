@@ -22,3 +22,26 @@ export const pairwiseBalanceSchema = z.object({
   balances: z.array(currencyBalanceSchema),
 });
 export type PairwiseBalance = z.infer<typeof pairwiseBalanceSchema>;
+
+/** Where part of a balance with someone can be settled: a group you are
+ * both in, or (groupId null) directly. */
+export const balanceContextSchema = currencyBalanceSchema.extend({
+  groupId: z.string().uuid().nullable(),
+  groupName: z.string().nullable(),
+});
+export type BalanceContext = z.infer<typeof balanceContextSchema>;
+
+export const personBalanceSchema = z.object({
+  userId: z.string().uuid(),
+  displayName: z.string(),
+  avatarUrl: z.string().nullable(),
+  contexts: z.array(balanceContextSchema),
+});
+export type PersonBalance = z.infer<typeof personBalanceSchema>;
+
+export const groupDebtSchema = z.object({
+  fromUserId: z.string().uuid(),
+  toUserId: z.string().uuid(),
+  amountMinor: z.number().int(),
+});
+export type GroupDebt = z.infer<typeof groupDebtSchema>;

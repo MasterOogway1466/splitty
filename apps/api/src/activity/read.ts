@@ -1,14 +1,16 @@
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
-import type { ActivityItem } from "@splitty/shared";
+import { and, eq, inArray, isNull } from "drizzle-orm";
+import { formatMoney, type ActivityItem, type Page } from "@splitty/shared";
+import { cursorTimestamp, newestFirst, toPage, type ListQuery } from "../routes/paging.js";
 import type { Executor } from "../db/client.js";
-import { activityFeed, expenseParticipants, expensePayers, expenses, groupMembers, groups, users } from "../db/schema.js";
+import { activityFeed, expenseParticipants, expensePayers, expenses, groupMembers, groups, settlements, users } from "../db/schema.js";
 
-/** A user's own feed, newest first, optionally for one group. An expense is
+/** A user's own feed, newest first, optionally for one group. An entry is
  * named only while the reader can still open it: the row itself outlives
  * their access, and the current description may be newer than it. */
-export async function readActivity(db: Executor, userId: string, groupId?: string): Promise<ActivityItem[]> {
-  const rows = await db
-    .select({ feed: activityFeed, actorName: users.displayName, groupName: groups.name, groupDeletedAt: groups.deletedAt, myRole: groupMembers.role })
+export async function readActivity(db: Executor, userId: string, query: ListQuery, groupId?: string): Promise<Page<ActivityItem>> {
+  const paging = newestFirst(activityFeed.createdAt, activityFeed.id, query);
+  const found = await db
+    .select({ feed: activityFeed, cursorAt: cursorTimestamp(activityFeed.createdAt), actorName: users.displayName, groupName: groups.name, groupDeletedAt: groups.deletedAt, myRole: groupMembers.role })
     .from(activityFeed)
     .innerJoin(users, eq(users.id, activityFeed.actorId))
     .leftJoin(groups, eq(groups.id, activityFeed.groupId))
@@ -16,9 +18,10 @@ export async function readActivity(db: Executor, userId: string, groupId?: strin
       groupMembers,
       and(eq(groupMembers.groupId, activityFeed.groupId), eq(groupMembers.userId, userId), isNull(groupMembers.removedAt)),
     )
-    .where(and(eq(activityFeed.recipientId, userId), groupId ? eq(activityFeed.groupId, groupId) : undefined))
-    .orderBy(desc(activityFeed.createdAt))
-    .limit(50);
+    .where(and(eq(activityFeed.recipientId, userId), groupId ? eq(activityFeed.groupId, groupId) : undefined, paging.where))
+    .orderBy(...paging.orderBy)
+    .limit(paging.limit);
+  const { rows, nextCursor } = toPage(found, query, (r) => `${r.cursorAt}_${r.feed.id}`);
 
   const expenseIds = [...new Set(rows.filter((r) => r.feed.entityType === "expense").map((r) => r.feed.entityId))];
   const labels = new Map<string, string>();
@@ -36,7 +39,15 @@ export async function readActivity(db: Executor, userId: string, groupId?: strin
     }
   }
 
-  return rows.map(({ feed, actorName, groupName, groupDeletedAt, myRole }) => {
+  const settlementIds = [...new Set(rows.filter((r) => r.feed.entityType === "settlement").map((r) => r.feed.entityId))];
+  if (settlementIds.length > 0) {
+    for (const s of await db.select().from(settlements).where(inArray(settlements.id, settlementIds))) {
+      labels.set(s.id, formatMoney(s.amountMinor, s.currency));
+      if (s.fromUserId === userId || s.toUserId === userId) partyTo.add(s.id);
+    }
+  }
+
+  const items = rows.map(({ feed, actorName, groupName, groupDeletedAt, myRole }) => {
     const canOpen = feed.groupId === null ? partyTo.has(feed.entityId) : myRole !== null && groupDeletedAt === null;
     return {
       id: feed.id,
@@ -51,4 +62,5 @@ export async function readActivity(db: Executor, userId: string, groupId?: strin
       createdAt: feed.createdAt.toISOString(),
     };
   });
+  return { items, nextCursor };
 }

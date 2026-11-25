@@ -1,16 +1,16 @@
 import { desc, eq } from "drizzle-orm";
-import type { UpdateExpenseRequest } from "@splitty/shared";
+import { attributeDebts, type UpdateExpenseRequest } from "@splitty/shared";
 import { writeActivity } from "../activity/write.js";
 import type { Database, Executor } from "../db/client.js";
 import { lockGroup } from "../db/locks.js";
 import { expenseEditHistory, expenseParticipants, expensePayers, expenses, users } from "../db/schema.js";
 import {
   AffectsFormerMemberError,
-  DomainError,
   ExpenseNotFoundError,
   NotExpenseParticipantError,
   NotGroupMemberError,
   VersionConflictError,
+  WrongStateError,
 } from "../groups/errors.js";
 import type { GroupService } from "../groups/service.js";
 import { resolveSplit } from "./expenses.js";
@@ -39,7 +39,7 @@ export async function requireExpenseAccess(db: Executor, groupService: GroupServ
 /** The change must not move anyone who can't currently be part of it: in a
  * group, a former member (docs/PLAN-PUBLIC.md §7); on a direct expense,
  * someone the editor isn't connected to. */
-async function requireMayAffect(
+export async function requireMayAffect(
   tx: Executor,
   groupService: GroupService,
   groupId: string | null,
@@ -53,6 +53,17 @@ async function requireMayAffect(
   for (const id of affected) {
     if (!(await groupService.isMember(groupId, id, tx))) throw new AffectsFormerMemberError();
   }
+}
+
+/** Everyone who ends up owing, or owed by, anyone a different amount. Equal
+ * totals aren't enough: a debtor's total can stay put while the people it
+ * is owed to change. */
+function peopleAffected(before: Map<string, number>, after: Map<string, number>, currencyChanged: boolean): string[] {
+  const pairs = (nets: Map<string, number>) => new Map(attributeDebts(nets).map((d) => [`${d.fromId}:${d.toId}`, d.amountMinor]));
+  const was = pairs(before);
+  const now = pairs(after);
+  const changed = [...new Set([...was.keys(), ...now.keys()])].filter((key) => currencyChanged || was.get(key) !== now.get(key));
+  return [...new Set(changed.flatMap((key) => key.split(":")))];
 }
 
 /** Locks and authorizes, runs `change`, then records history and activity. */
@@ -70,9 +81,9 @@ async function mutateExpense(
     await tx.select({ id: expenses.id }).from(expenses).where(eq(expenses.id, expenseId)).for("update");
     const row = await requireExpenseAccess(tx, groupService, expenseId, userId);
 
-    if (row.version !== input.version) throw new VersionConflictError(row);
+    if (row.version !== input.version) throw new VersionConflictError({ expense: row });
     if (kind === "restore" ? row.deletedAt === null : row.deletedAt !== null) {
-      throw new DomainError(kind === "restore" ? "This expense isn't deleted" : "This expense is deleted", "wrong_state");
+      throw new WrongStateError(kind === "restore" ? "This expense isn't deleted" : "This expense is deleted");
     }
 
     const before = await snapshotExpense(tx, row);
@@ -125,11 +136,12 @@ export async function updateExpense(
 
     const oldNets = netsOf(before);
     const newNets = netsOf({ ...before, payers, participants });
-    const affected = [...new Set([...wasInvolved, ...nowInvolved])].filter(
-      (id) => (oldNets.get(id) ?? 0) !== (newNets.get(id) ?? 0) || (body.currency !== before.currency && (newNets.get(id) ?? 0) !== 0),
-    );
+    const affected = peopleAffected(oldNets, newNets, body.currency !== before.currency);
     const added = [...nowInvolved].filter((id) => !wasInvolved.has(id));
     await requireMayAffect(tx, groupService, row.groupId, userId, [...affected, ...added]);
+    // Being on an expense the creator recorded counts as having split with
+    // them (pastSplitIds), so an editor must not bring in their strangers.
+    if (row.groupId === null) await requireConnected(tx, row.createdBy, added);
 
     await tx
       .update(expenses)
@@ -168,13 +180,18 @@ export async function setExpenseDeleted(
   });
 }
 
-/** Newest first. */
-export async function readHistory(db: Executor, expenseId: string) {
+/** Newest first. On a direct expense, versions the reader wasn't part of are
+ * left out: being added later doesn't open up what came before. */
+export async function readHistory(db: Executor, row: ExpenseRow, readerId: string) {
+  const visible = (s: Snapshot | null | undefined) => (s && (row.groupId !== null || involvedIn(s).has(readerId)) ? s : null);
   const rows = await db
     .select({ entry: expenseEditHistory, editedByName: users.displayName })
     .from(expenseEditHistory)
     .innerJoin(users, eq(users.id, expenseEditHistory.editedBy))
-    .where(eq(expenseEditHistory.expenseId, expenseId))
+    .where(eq(expenseEditHistory.expenseId, row.id))
     .orderBy(desc(expenseEditHistory.editedAt));
-  return rows.map(({ entry, editedByName }) => ({ entry, editedByName, diff: (entry.diff ?? {}) as HistoryDiff }));
+  return rows.map(({ entry, editedByName }) => {
+    const { before, after } = (entry.diff ?? {}) as HistoryDiff;
+    return { entry, editedByName, diff: { before: visible(before), after: visible(after) } };
+  });
 }

@@ -1,4 +1,3 @@
-import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import {
   addGroupMemberRequestSchema,
@@ -9,9 +8,11 @@ import {
 } from "@splitty/shared";
 import { readActivity } from "../activity/read.js";
 import { checkAndRecordRateLimit } from "../auth/rateLimit.js";
-import { expenses, settlements } from "../db/schema.js";
+import { computeGroupDebts } from "../ledger/balances.js";
+import { listExpenses, listSettlements } from "../ledger/lists.js";
 import { recordExpense, recordSettlement } from "../ledger/record.js";
 import { authenticateVerified } from "../plugins/authenticate.js";
+import { listQuery } from "./paging.js";
 import { uuidParam } from "./params.js";
 import { serializeExpense, serializeSettlement } from "./serializers.js";
 
@@ -86,15 +87,8 @@ export async function registerGroupRoutes(app: FastifyInstance): Promise<void> {
 
   app.get("/:groupId/expenses", async (request) => {
     const groupId = uuidParam(request, "groupId");
-    const deleted = (request.query as { deleted?: string }).deleted === "true";
     await groupService.requireMembership(groupId, request.currentUser!.id);
-
-    const rows = await db
-      .select()
-      .from(expenses)
-      .where(and(eq(expenses.groupId, groupId), deleted ? isNotNull(expenses.deletedAt) : isNull(expenses.deletedAt)))
-      .orderBy(desc(expenses.expenseDate), desc(expenses.createdAt));
-    return Promise.all(rows.map((r) => serializeExpense(db, r)));
+    return listExpenses(db, { groupId }, listQuery(request));
   });
 
   app.post("/:groupId/expenses", async (request, reply) => {
@@ -115,12 +109,7 @@ export async function registerGroupRoutes(app: FastifyInstance): Promise<void> {
     const groupId = uuidParam(request, "groupId");
     await groupService.requireMembership(groupId, request.currentUser!.id);
 
-    const rows = await db
-      .select()
-      .from(settlements)
-      .where(and(eq(settlements.groupId, groupId)))
-      .orderBy(desc(settlements.settledAt));
-    return rows.filter((r) => !r.deletedAt).map(serializeSettlement);
+    return listSettlements(db, { groupId }, listQuery(request));
   });
 
   app.post("/:groupId/settlements", async (request, reply) => {
@@ -134,7 +123,13 @@ export async function registerGroupRoutes(app: FastifyInstance): Promise<void> {
     const body = createSettlementRequestSchema.parse(request.body);
     const { row, created } = await recordSettlement(db, groupService, { groupId, userId, body });
     reply.status(created ? 201 : 200);
-    return serializeSettlement(row);
+    return serializeSettlement(db, row);
+  });
+
+  app.get("/:groupId/debts", async (request) => {
+    const groupId = uuidParam(request, "groupId");
+    const { members } = await groupService.getGroupDetail(groupId, request.currentUser!.id);
+    return computeGroupDebts(db, groupId, new Set(members.map((m) => m.userId)));
   });
 
   app.get("/:groupId/activity", async (request) => {
@@ -142,6 +137,6 @@ export async function registerGroupRoutes(app: FastifyInstance): Promise<void> {
     const userId = request.currentUser!.id;
     await groupService.requireMembership(groupId, userId);
 
-    return readActivity(db, userId, groupId);
+    return readActivity(db, userId, listQuery(request), groupId);
   });
 }

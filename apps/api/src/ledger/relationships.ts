@@ -27,6 +27,21 @@ export async function requireConnected(db: Executor, userId: string, otherUserId
   throw new NotConnectedError();
 }
 
+/** Lock key for writes that depend on what is outstanding between two people. */
+export function settlementPairKey(a: string, b: string): string {
+  return `settle:${[a, b].sort().join(":")}`;
+}
+
+export async function isConnected(db: Executor, userId: string, otherUserId: string): Promise<boolean> {
+  try {
+    await requireConnected(db, userId, [otherUserId]);
+    return true;
+  } catch (err) {
+    if (err instanceof NotConnectedError) return false;
+    throw err;
+  }
+}
+
 /** Direct settlements additionally allow paying down an outstanding debt —
  * never past zero — with someone the requester isn't otherwise connected
  * to, since a mutual contact may have recorded that debt. */
@@ -35,13 +50,10 @@ export async function requireSettleable(
   userId: string,
   input: { fromUserId: string; toUserId: string; amountMinor: number; currency: string },
 ): Promise<void> {
-  try {
-    await requireConnected(db, userId, [input.fromUserId, input.toUserId]);
-  } catch (err) {
-    if (!(err instanceof NotConnectedError)) throw err;
-    const owedToPayee = (await computePairwiseBalances(db, input.toUserId, input.fromUserId)).get(input.currency) ?? 0;
-    if (input.amountMinor > owedToPayee) throw err;
-  }
+  const other = input.fromUserId === userId ? input.toUserId : input.fromUserId;
+  if (await isConnected(db, userId, other)) return;
+  const owedToPayee = (await computePairwiseBalances(db, input.toUserId, input.fromUserId)).get(input.currency) ?? 0;
+  if (input.amountMinor > owedToPayee) throw new NotConnectedError();
 }
 
 /** People the user has split with: in a group, or in a direct expense one
@@ -84,4 +96,15 @@ export async function activeCoMemberIds(db: Executor, userId: string): Promise<s
     .from(groupMembers)
     .where(and(inArray(groupMembers.groupId, myGroups.map((g) => g.groupId)), isNull(groupMembers.removedAt)));
   return rows.map((r) => r.userId);
+}
+
+/** Non-deleted groups both people currently belong to. */
+export async function sharedGroups(db: Executor, userId: string, otherUserId: string): Promise<{ id: string; name: string }[]> {
+  const rows = await db
+    .select({ id: groups.id, name: groups.name, userId: groupMembers.userId })
+    .from(groupMembers)
+    .innerJoin(groups, eq(groups.id, groupMembers.groupId))
+    .where(and(inArray(groupMembers.userId, [userId, otherUserId]), isNull(groupMembers.removedAt), isNull(groups.deletedAt)));
+  const mine = new Set(rows.filter((r) => r.userId === userId).map((r) => r.id));
+  return rows.filter((r) => r.userId === otherUserId && mine.has(r.id)).map(({ id, name }) => ({ id, name }));
 }

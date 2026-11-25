@@ -94,7 +94,7 @@ describe("pairwise attribution with multiple payers (docs/PLAN-PUBLIC.md §7)", 
     // Rejected by the API now, but rows recorded before that may exist.
     await createSettlement(ctx.db, {
       groupId, fromUserId: users[2]!.userId, toUserId: users[2]!.userId, amountMinor: 333, currency: "USD",
-      method: "other", note: null, settledAt: new Date(), createdBy: users[2]!.userId,
+      method: "other", note: null, settledAt: "2026-01-01", createdBy: users[2]!.userId,
     });
     for (const user of users) {
       const global = ((await get(user, "/api/balances")) as Balance[]).reduce((s, b) => s + b.netMinor, 0);
