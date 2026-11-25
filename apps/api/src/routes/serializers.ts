@@ -1,6 +1,7 @@
 import { inArray } from "drizzle-orm";
 import type { Expense, ExpenseHistoryEntry, ExpenseSnapshot, Settlement, SettlementHistoryEntry, ShareInput } from "@splitty/shared";
 import type { Database } from "../db/client.js";
+import { groupBy } from "../groupBy.js";
 import { readItemizations } from "../ledger/items.js";
 import type { readSettlementHistory } from "../ledger/settlementLifecycle.js";
 import type { readHistory } from "../ledger/lifecycle.js";
@@ -16,12 +17,6 @@ async function displayNames(db: Database, userIds: Iterable<string>): Promise<(i
   return (id) => names.get(id) ?? "Unknown";
 }
 
-function byExpense<Row extends { expenseId: string }>(rows: Row[]): Map<string, Row[]> {
-  const result = new Map<string, Row[]>();
-  for (const row of rows) result.set(row.expenseId, [...(result.get(row.expenseId) ?? []), row]);
-  return result;
-}
-
 export async function serializeExpenses(db: Database, rows: ExpenseRow[]): Promise<Expense[]> {
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.id);
@@ -33,8 +28,8 @@ export async function serializeExpenses(db: Database, rows: ExpenseRow[]): Promi
     .orderBy(expenseParticipants.userId);
   const nameOf = await displayNames(db, [...payerRows, ...participantRows].map((p) => p.userId));
   const itemizations = await readItemizations(db, rows);
-  const payersOf = byExpense(payerRows);
-  const participantsOf = byExpense(participantRows);
+  const payersOf = groupBy(payerRows, (p) => p.expenseId);
+  const participantsOf = groupBy(participantRows, (p) => p.expenseId);
 
   return rows.map((row) => ({
     id: row.id,

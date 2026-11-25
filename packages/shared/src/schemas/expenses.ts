@@ -42,7 +42,14 @@ const itemizationSchema = z.object({
   tipMinor: z.number().int().min(0).max(MAX_AMOUNT_MINOR).default(0),
 });
 export type Itemization = z.infer<typeof itemizationSchema>;
-const itemizedSplitSchema = itemizationSchema.extend({ splitMethod: z.literal("itemized") });
+const MAX_ASSIGNMENTS = 500;
+const itemizedSplitSchema = itemizationSchema.extend({
+  splitMethod: z.literal("itemized"),
+  items: itemizationSchema.shape.items.refine(
+    (items) => items.reduce((sum, i) => sum + i.assignments.length, 0) <= MAX_ASSIGNMENTS,
+    `At most ${MAX_ASSIGNMENTS} item assignments`,
+  ),
+});
 
 export const splitSchema = z.discriminatedUnion("splitMethod", [
   equalSplitSchema,

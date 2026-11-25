@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { uuidv7 } from "uuidv7";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { expenseLineItems } from "../src/db/schema.js";
+import { expenseComments, expenseLineItems, expenses } from "../src/db/schema.js";
 import { authHeader, createTestContext, createVerifiedUser, truncateAllTestTables, type TestContext } from "./setup.js";
 
 type User = { userId: string; accessToken: string };
@@ -103,6 +103,19 @@ describe("comments and itemized splits (docs/PLAN-PUBLIC.md Phase 2E)", () => {
     });
   });
 
+  it("a comment landing while an edit waits to add someone stays hidden from them", async () => {
+    const id = (await call(a, "POST", "/api/expenses", equal([a, b]))).json().id;
+    let pending!: ReturnType<typeof call>;
+    await ctx.db.transaction(async (tx) => {
+      await tx.select().from(expenses).where(eq(expenses.id, id)).for("update");
+      pending = call(a, "PUT", `/api/expenses/${id}`, { version: 1, ...equal([a, b, c]) });
+      await Promise.race([pending as Promise<unknown>, new Promise((resolve) => setTimeout(resolve, 400))]);
+      await tx.insert(expenseComments).values({ id: uuidv7(), expenseId: id, userId: b.userId, body: "private", createdAt: new Date() });
+    });
+    expect((await pending).statusCode).toBe(200);
+    expect(await get(c, `/api/expenses/${id}/comments`)).toEqual([]);
+  });
+
   describe("itemized splits", () => {
     const item = (description: string, amountMinor: number, people: User[], shares = 1) => ({
       description, amountMinor, assignments: people.map((p) => ({ userId: p.userId, shares })),
@@ -151,6 +164,7 @@ describe("comments and itemized splits (docs/PLAN-PUBLIC.md Phase 2E)", () => {
         [itemized([item("x", 100, [a])], 0, 0, 101), 400],
         [itemized([item("x", 100, [])], 0, 0, 100), 400],
         [itemized([], 50, 50, 100), 400],
+        [itemized(Array.from({ length: 100 }, () => item("x", 100, Array.from({ length: 6 }, () => ({ userId: uuidv7(), accessToken: "" })))), 0, 0, 10000), 400],
         [itemized([item("x", 100, [a, a])], 0, 0, 100), 400],
         [itemized([item("x", 0, [a])], 0, 100, 100), 400],
         [itemized([item("x", 100, [a])], -10, 10, 100), 400],

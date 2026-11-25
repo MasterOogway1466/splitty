@@ -2,6 +2,7 @@ import { asc, inArray } from "drizzle-orm";
 import { splitByLargestRemainder, type ExpenseSplit, type Itemization } from "@splitty/shared";
 import type { Executor } from "../db/client.js";
 import { expenseLineItemAssignments, expenseLineItems, type expenses } from "../db/schema.js";
+import { groupBy } from "../groupBy.js";
 import { InvalidSplitError } from "../groups/errors.js";
 
 type ExpenseRow = typeof expenses.$inferSelect;
@@ -72,17 +73,17 @@ export async function readItemizations(db: Executor, rows: ExpenseRow[]): Promis
         .where(inArray(expenseLineItemAssignments.lineItemId, items.map((i) => i.id)))
         .orderBy(asc(expenseLineItemAssignments.userId))
     : [];
+  const itemsOf = groupBy(items, (i) => i.expenseId);
+  const assignmentsOf = groupBy(assignments, (a) => a.lineItemId);
   return new Map(
     itemized.map((row) => [
       row.id,
       {
-        items: items
-          .filter((i) => i.expenseId === row.id)
-          .map((i) => ({
-            description: i.description,
-            amountMinor: i.amountMinor,
-            assignments: assignments.filter((a) => a.lineItemId === i.id).map((a) => ({ userId: a.userId, shares: Number(a.share) })),
-          })),
+        items: (itemsOf.get(row.id) ?? []).map((i) => ({
+          description: i.description,
+          amountMinor: i.amountMinor,
+          assignments: (assignmentsOf.get(i.id) ?? []).map((a) => ({ userId: a.userId, shares: Number(a.share) })),
+        })),
         taxMinor: row.taxMinor,
         tipMinor: row.tipMinor,
       },

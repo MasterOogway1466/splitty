@@ -99,6 +99,9 @@ async function mutateExpense(
     await tx.insert(expenseEditHistory).values({
       expenseId,
       editedBy: userId,
+      // Not the default, which is when the transaction began: that can be
+      // before whatever this one waited on the lock for.
+      editedAt: new Date(),
       changeType: kind,
       diff: { before, after } satisfies HistoryDiff,
     });

@@ -88,7 +88,7 @@ export async function listComments(db: Executor, row: ExpenseRow, readerId: stri
     .where(and(eq(expenseComments.expenseId, row.id), isNull(expenseComments.deletedAt)))
     .orderBy(asc(expenseComments.createdAt), asc(expenseComments.id));
   const since = row.groupId === null ? await visibleSince(db, row.id, readerId) : null;
-  return rows.filter(({ comment }) => since === null || comment.createdAt >= since).map(serialize);
+  return rows.filter(({ comment }) => since === null || comment.createdAt > since).map(serialize);
 }
 
 /** When the reader last became part of a direct expense; null if they have
