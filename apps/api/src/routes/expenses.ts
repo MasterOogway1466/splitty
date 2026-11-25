@@ -1,12 +1,16 @@
 import { and, desc, eq, isNull } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
-import { createExpenseRequestSchema } from "@splitty/shared";
+import { createExpenseRequestSchema, expenseVersionRequestSchema, updateExpenseRequestSchema } from "@splitty/shared";
 import { checkAndRecordRateLimit } from "../auth/rateLimit.js";
 import { expenseParticipants, expensePayers, expenses } from "../db/schema.js";
+import { RateLimitedError } from "../auth/errors.js";
+import { readHistory, requireExpenseAccess, setExpenseDeleted, updateExpense } from "../ledger/lifecycle.js";
 import { recordExpense } from "../ledger/record.js";
 import { authenticateVerified } from "../plugins/authenticate.js";
-import { serializeExpense } from "./serializers.js";
+import { uuidParam } from "./params.js";
+import { serializeExpense, serializeHistory } from "./serializers.js";
 
+const EXPENSE_EDIT_CAP = { windowSeconds: 24 * 60 * 60, maxEvents: 500 };
 const EXPENSE_CREATE_CAP = { windowSeconds: 24 * 60 * 60, maxEvents: 200 };
 
 /** Direct (non-group) expenses and IOUs — docs/PLAN-PUBLIC.md §12's
@@ -37,7 +41,7 @@ export async function registerExpenseRoutes(app: FastifyInstance): Promise<void>
       .select()
       .from(expenses)
       .where(and(isNull(expenses.groupId), isNull(expenses.deletedAt)))
-      .orderBy(desc(expenses.expenseDate));
+      .orderBy(desc(expenses.expenseDate), desc(expenses.createdAt));
     const relevant = rows.filter((r) => expenseIds.includes(r.id));
     return Promise.all(relevant.map((r) => serializeExpense(db, r)));
   });
@@ -52,4 +56,39 @@ export async function registerExpenseRoutes(app: FastifyInstance): Promise<void>
     reply.status(created ? 201 : 200);
     return serializeExpense(db, row);
   });
+
+  // The routes below serve group and direct expenses alike.
+
+  async function limitEdits(userId: string): Promise<void> {
+    const rl = await checkAndRecordRateLimit(db, "expense_edit", userId, EXPENSE_EDIT_CAP);
+    if (!rl.allowed) throw new RateLimitedError(EXPENSE_EDIT_CAP.windowSeconds);
+  }
+
+  app.get("/:expenseId", async (request) => {
+    const row = await requireExpenseAccess(db, groupService, uuidParam(request, "expenseId"), request.currentUser!.id);
+    return serializeExpense(db, row);
+  });
+
+  app.get("/:expenseId/history", async (request) => {
+    const row = await requireExpenseAccess(db, groupService, uuidParam(request, "expenseId"), request.currentUser!.id);
+    return serializeHistory(db, await readHistory(db, row.id));
+  });
+
+  app.put("/:expenseId", async (request) => {
+    const expenseId = uuidParam(request, "expenseId");
+    const userId = request.currentUser!.id;
+    await limitEdits(userId);
+    const body = updateExpenseRequestSchema.parse(request.body);
+    return serializeExpense(db, await updateExpense(db, groupService, { expenseId, userId, body }));
+  });
+
+  for (const [action, deleted] of [["delete", true], ["restore", false]] as const) {
+    app.post(`/:expenseId/${action}`, async (request) => {
+      const expenseId = uuidParam(request, "expenseId");
+      const userId = request.currentUser!.id;
+      await limitEdits(userId);
+      const { version } = expenseVersionRequestSchema.parse(request.body);
+      return serializeExpense(db, await setExpenseDeleted(db, groupService, { expenseId, userId, version, deleted }));
+    });
+  }
 }

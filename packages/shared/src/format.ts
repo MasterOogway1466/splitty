@@ -25,3 +25,16 @@ export function formatDateTime(date: Date, locale = "en-US"): string {
     timeStyle: "short",
   }).format(date);
 }
+
+/** For a YYYY-MM-DD calendar date, which must not shift with the timezone. */
+export function formatCalendarDate(value: string, locale = "en-US"): string {
+  return new Intl.DateTimeFormat(locale, { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }).format(
+    new Date(`${value}T00:00:00Z`),
+  );
+}
+
+/** Today in the device's own timezone, as YYYY-MM-DD. */
+export function todayCalendarDate(now = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}

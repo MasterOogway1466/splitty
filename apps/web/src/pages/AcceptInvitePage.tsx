@@ -15,12 +15,17 @@ export function AcceptInvitePage() {
 
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    if (password !== confirmPassword) {
+      setError("The passwords don't match.");
+      return;
+    }
     setSubmitting(true);
     try {
       const body = (await apiPost(`/invites/${token}/accept`, { displayName, password })) as {
@@ -93,6 +98,15 @@ export function AcceptInvitePage() {
       <form onSubmit={handleSubmit} className="space-y-4">
         <TextField label="Your name" value={displayName} onChange={setDisplayName} required />
         <TextField label="Password" type="password" value={password} onChange={setPassword} autoComplete="new-password" required minLength={8} />
+        <TextField
+          label="Confirm password"
+          type="password"
+          value={confirmPassword}
+          onChange={setConfirmPassword}
+          autoComplete="new-password"
+          required
+          minLength={8}
+        />
         <SubmitButton disabled={submitting}>{submitting ? "Creating account…" : "Accept invite"}</SubmitButton>
       </form>
     </AuthLayout>

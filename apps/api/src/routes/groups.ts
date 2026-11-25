@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import {
   addGroupMemberRequestSchema,
@@ -7,8 +7,9 @@ import {
   createSettlementRequestSchema,
   setMemberColorRequestSchema,
 } from "@splitty/shared";
+import { readActivity } from "../activity/read.js";
 import { checkAndRecordRateLimit } from "../auth/rateLimit.js";
-import { activityFeed, expenses, settlements, users } from "../db/schema.js";
+import { expenses, settlements } from "../db/schema.js";
 import { recordExpense, recordSettlement } from "../ledger/record.js";
 import { authenticateVerified } from "../plugins/authenticate.js";
 import { uuidParam } from "./params.js";
@@ -85,14 +86,15 @@ export async function registerGroupRoutes(app: FastifyInstance): Promise<void> {
 
   app.get("/:groupId/expenses", async (request) => {
     const groupId = uuidParam(request, "groupId");
+    const deleted = (request.query as { deleted?: string }).deleted === "true";
     await groupService.requireMembership(groupId, request.currentUser!.id);
 
     const rows = await db
       .select()
       .from(expenses)
-      .where(and(eq(expenses.groupId, groupId)))
-      .orderBy(desc(expenses.expenseDate));
-    return Promise.all(rows.filter((r) => !r.deletedAt).map((r) => serializeExpense(db, r)));
+      .where(and(eq(expenses.groupId, groupId), deleted ? isNotNull(expenses.deletedAt) : isNull(expenses.deletedAt)))
+      .orderBy(desc(expenses.expenseDate), desc(expenses.createdAt));
+    return Promise.all(rows.map((r) => serializeExpense(db, r)));
   });
 
   app.post("/:groupId/expenses", async (request, reply) => {
@@ -140,29 +142,6 @@ export async function registerGroupRoutes(app: FastifyInstance): Promise<void> {
     const userId = request.currentUser!.id;
     await groupService.requireMembership(groupId, userId);
 
-    const rows = await db
-      .select()
-      .from(activityFeed)
-      .where(and(eq(activityFeed.groupId, groupId), eq(activityFeed.recipientId, userId)))
-      .orderBy(desc(activityFeed.createdAt))
-      .limit(50);
-
-    const actorIds = [...new Set(rows.map((r) => r.actorId))];
-    const actorRows = actorIds.length
-      ? await db.select({ id: users.id, displayName: users.displayName }).from(users).where(inArray(users.id, actorIds))
-      : [];
-    const actorMap = new Map(actorRows.map((a) => [a.id, a.displayName]));
-
-    return rows.map((row) => ({
-      id: row.id,
-      type: row.type,
-      actorId: row.actorId,
-      actorDisplayName: actorMap.get(row.actorId) ?? "Someone",
-      entityType: row.entityType,
-      entityId: row.entityId,
-      groupId: row.groupId,
-      groupName: null,
-      createdAt: row.createdAt.toISOString(),
-    }));
+    return readActivity(db, userId, groupId);
   });
 }

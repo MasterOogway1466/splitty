@@ -62,6 +62,12 @@ async function requireMembers(tx: Executor, groupService: GroupService, groupId:
   }
 }
 
+export async function requireCategory(tx: Executor, categoryId: string | null | undefined): Promise<void> {
+  if (!categoryId) return;
+  const [category] = await tx.select({ id: categories.id }).from(categories).where(eq(categories.id, categoryId));
+  if (!category) throw new DomainError("Unknown category", "unknown_category");
+}
+
 /** `groupId: null` records a direct expense. */
 export async function recordExpense(
   db: Database,
@@ -86,10 +92,7 @@ export async function recordExpense(
       if (!involved.includes(userId)) throw new NotExpenseParticipantError();
       await requireConnected(tx, userId, involved);
     }
-    if (body.categoryId) {
-      const [category] = await tx.select({ id: categories.id }).from(categories).where(eq(categories.id, body.categoryId));
-      if (!category) throw new DomainError("Unknown category", "unknown_category");
-    }
+    await requireCategory(tx, body.categoryId);
     return createExpense(tx, {
       id: body.id,
       requestHash,
@@ -99,7 +102,7 @@ export async function recordExpense(
       amountMinor: body.amountMinor,
       currency: body.currency,
       categoryId: body.categoryId ?? null,
-      expenseDate: body.expenseDate ? new Date(body.expenseDate) : new Date(),
+      expenseDate: body.expenseDate ?? new Date().toISOString().slice(0, 10),
       payers: body.payers,
       split: body,
       createdBy: userId,

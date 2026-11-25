@@ -1,3 +1,5 @@
+import type { expenses } from "../db/schema.js";
+
 export class DomainError extends Error {
   readonly code: string;
   constructor(message: string, code: string) {
@@ -56,6 +58,30 @@ export class NotExpenseParticipantError extends DomainError {
 export class IdConflictError extends DomainError {
   constructor() {
     super("This id has already been used for a different entry", "id_conflict");
+  }
+}
+
+export class ExpenseNotFoundError extends DomainError {
+  constructor() {
+    super("Expense not found", "expense_not_found");
+  }
+}
+
+/** The caller edited a version that is no longer current; `current` is what
+ * replaced it. */
+export class VersionConflictError extends DomainError {
+  readonly current: typeof expenses.$inferSelect;
+  constructor(current: typeof expenses.$inferSelect) {
+    super("Someone else changed this expense", "version_conflict");
+    this.current = current;
+  }
+}
+
+/** docs/PLAN-PUBLIC.md §7: their balance was zero when they left and must
+ * stay that way unless they rejoin. */
+export class AffectsFormerMemberError extends DomainError {
+  constructor() {
+    super("This would change the balance of someone who has left the group. Add them back first.", "affects_former_member");
   }
 }
 

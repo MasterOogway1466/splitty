@@ -2,7 +2,9 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { ProtectedRoute } from "./components/ProtectedRoute.js";
 import { AuthProvider } from "./lib/AuthContext.js";
 import { AcceptInvitePage } from "./pages/AcceptInvitePage.js";
+import { ActivityPage } from "./pages/ActivityPage.js";
 import { CheckYourEmailPage } from "./pages/CheckYourEmailPage.js";
+import { ExpenseDetailPage } from "./pages/ExpenseDetailPage.js";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage.js";
 import { FriendsPage } from "./pages/FriendsPage.js";
 import { GroupDetailPage } from "./pages/GroupDetailPage.js";
@@ -45,6 +47,22 @@ export function App() {
           element={
             <ProtectedRoute>
               <FriendsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/expenses/:expenseId"
+          element={
+            <ProtectedRoute>
+              <ExpenseDetailPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/activity"
+          element={
+            <ProtectedRoute>
+              <ActivityPage />
             </ProtectedRoute>
           }
         />

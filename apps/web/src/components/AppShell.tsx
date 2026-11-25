@@ -8,7 +8,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-paper">
       <header className="bg-ledger">
-        <div className="max-w-2xl mx-auto px-5 py-3.5 flex items-center justify-between">
+        <div className="max-w-2xl mx-auto px-5 py-3.5 flex flex-wrap items-center justify-between gap-x-5 gap-y-2">
           <nav className="flex items-center gap-5">
             <Link to="/" className="font-semibold text-paper text-[15px] tracking-tight">
               Splitty
@@ -18,6 +18,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Link>
             <Link to="/friends" className="text-sm text-paper/75 hover:text-paper transition-colors">
               Friends
+            </Link>
+            <Link to="/activity" className="text-sm text-paper/75 hover:text-paper transition-colors">
+              Activity
             </Link>
           </nav>
           <div className="flex items-center gap-4">

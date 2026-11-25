@@ -100,3 +100,7 @@ export function apiDelete(path: string): Promise<unknown> {
 export function apiPatch(path: string, body?: unknown): Promise<unknown> {
   return apiFetch(path, { method: "PATCH", body: body === undefined ? undefined : JSON.stringify(body) });
 }
+
+export function apiPut(path: string, body: unknown): Promise<unknown> {
+  return apiFetch(path, { method: "PUT", body: JSON.stringify(body) });
+}

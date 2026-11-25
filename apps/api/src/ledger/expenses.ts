@@ -1,7 +1,9 @@
 import { uuidv7 } from "uuidv7";
 import { splitByLargestRemainder, sumMinor, type ExpenseSplit } from "@splitty/shared";
 import type { Executor } from "../db/client.js";
-import { activityFeed, expenseEditHistory, expenseParticipants, expensePayers, expenses, friendLinks } from "../db/schema.js";
+import { expenseEditHistory, expenseParticipants, expensePayers, expenses, friendLinks } from "../db/schema.js";
+import { writeActivity } from "../activity/write.js";
+import { snapshotExpense, type HistoryDiff } from "./history.js";
 import { InvalidSplitError } from "../groups/errors.js";
 
 export interface CreateExpenseInput {
@@ -13,7 +15,7 @@ export interface CreateExpenseInput {
   amountMinor: number;
   currency: string;
   categoryId: string | null;
-  expenseDate: Date;
+  expenseDate: string;
   payers: { userId: string; amountMinor: number }[];
   split: ExpenseSplit;
   createdBy: string;
@@ -104,11 +106,10 @@ export function computeParticipantShares(
   }
 }
 
-/** docs/PLAN-PUBLIC.md §8: `id` is a UUIDv7, the client's if it sent one. */
-export async function createExpense(db: Executor, input: CreateExpenseInput): Promise<{ id: string }> {
-  const id = input.id ?? uuidv7();
-  const now = new Date();
-
+/** Validates payers and split against the total and computes everyone's
+ * rows. Shared by create and edit, so an edit can't store anything a new
+ * expense couldn't. */
+export function resolveSplit(input: { amountMinor: number; payers: { userId: string; amountMinor: number }[]; split: ExpenseSplit }) {
   const payersTotal = sumMinor(input.payers.map((p) => p.amountMinor));
   if (payersTotal !== input.amountMinor) {
     throw new InvalidSplitError(`payer amounts sum to ${payersTotal}, expected ${input.amountMinor}`);
@@ -118,8 +119,8 @@ export async function createExpense(db: Executor, input: CreateExpenseInput): Pr
     throw new InvalidSplitError("payers must not contain duplicates");
   }
 
-  const participantShares = computeParticipantShares(input.amountMinor, input.split);
-  const participantsTotal = sumMinor(participantShares.map((p) => p.owedAmountMinor));
+  const participants = computeParticipantShares(input.amountMinor, input.split);
+  const participantsTotal = sumMinor(participants.map((p) => p.owedAmountMinor));
   if (participantsTotal !== input.amountMinor) {
     // Should be unreachable if computeParticipantShares is correct for
     // every method — kept as a hard invariant check rather than
@@ -127,11 +128,19 @@ export async function createExpense(db: Executor, input: CreateExpenseInput): Pr
     // balance downstream.
     throw new Error(`participant shares sum to ${participantsTotal}, expected ${input.amountMinor}`);
   }
+  return { payers: input.payers.map((p) => ({ userId: p.userId, amountMinor: p.amountMinor })), participants };
+}
+
+/** docs/PLAN-PUBLIC.md §8: `id` is a UUIDv7, the client's if it sent one. */
+export async function createExpense(db: Executor, input: CreateExpenseInput): Promise<{ id: string }> {
+  const id = input.id ?? uuidv7();
+  const now = new Date();
+  const { payers, participants } = resolveSplit(input);
 
   // Phase 1 has no real FX conversion yet (§10 is Phase 3) — base
   // currency/amount are the identity mapping, fx_rate=1 (§2's placeholder).
   await db.transaction(async (tx) => {
-    await tx.insert(expenses).values({
+    const [row] = await tx.insert(expenses).values({
       id,
       groupId: input.groupId,
       description: input.description,
@@ -150,39 +159,28 @@ export async function createExpense(db: Executor, input: CreateExpenseInput): Pr
       version: 1,
       createdAt: now,
       updatedAt: now,
-    });
+    }).returning();
 
-    await tx.insert(expensePayers).values(input.payers.map((p) => ({ expenseId: id, userId: p.userId, amountMinor: p.amountMinor })));
+    await tx.insert(expensePayers).values(payers.map((p) => ({ ...p, expenseId: id })));
 
-    await tx.insert(expenseParticipants).values(
-      participantShares.map((p) => ({
-        expenseId: id,
-        userId: p.userId,
-        owedAmountMinor: p.owedAmountMinor,
-        shareInput: p.shareInput,
-      })),
-    );
+    await tx.insert(expenseParticipants).values(participants.map((p) => ({ ...p, expenseId: id })));
 
     await tx.insert(expenseEditHistory).values({
       expenseId: id,
       editedBy: input.createdBy,
       changeType: "create",
-      diff: { description: input.description, amountMinor: input.amountMinor, currency: input.currency },
+      diff: { before: null, after: await snapshotExpense(tx, row!) } satisfies HistoryDiff,
     });
 
-    // Every payer/participant gets their own activity-feed row so it
-    // shows up in their own feed (§6: per-recipient, not a shared row).
-    const recipientIds = new Set([...payerIds, ...participantShares.map((p) => p.userId)]);
-    await tx.insert(activityFeed).values(
-      [...recipientIds].map((recipientId) => ({
-        recipientId,
-        actorId: input.createdBy,
-        type: "expense_created" as const,
-        entityType: "expense",
-        entityId: id,
-        groupId: input.groupId,
-      })),
-    );
+    const recipientIds = new Set([...payers, ...participants].map((p) => p.userId));
+    await writeActivity(tx, {
+      actorId: input.createdBy,
+      type: "expense_created",
+      entityType: "expense",
+      entityId: id,
+      groupId: input.groupId,
+      involved: recipientIds,
+    });
 
     if (input.groupId === null) {
       // §6: friend_links created implicitly on the first direct
