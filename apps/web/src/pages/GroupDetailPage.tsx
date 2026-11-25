@@ -41,7 +41,7 @@ export function GroupDetailPage() {
         Balances in {group.defaultCurrency}. Debts are {group.simplifyDebts ? "simplified" : "not simplified"}.
       </p>
       {group.archivedAt && <p className="text-sm text-gold mb-3">This group is archived, so it can't be changed.</p>}
-      <GroupActions group={group} onSettings={() => setShowSettings((v) => !v)} />
+      <GroupActions group={group} settingsOpen={showSettings} onSettings={() => setShowSettings((v) => !v)} />
       {showSettings && !group.archivedAt && <GroupSettings key={`settings-${group.id}`} group={group} onDone={() => setShowSettings(false)} />}
       <MembersSection group={group} />
       <DebtsSection key={`debts-${group.id}`} group={group} />

@@ -1,13 +1,14 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { CURRENCY_CODES, formatMoney, todayCalendarDate, type BalanceContext, type PersonBalance, type UserProfile } from "@splitty/shared";
 import { AppShell } from "../components/AppShell.js";
+import { BackLink, Button, DisclosureButton, TextLink } from "../components/Button.js";
 import { ExpenseForm } from "../components/ExpenseForm.js";
 import { ExpenseRows } from "../components/ExpenseRows.js";
 import { LoadMore } from "../components/LoadMore.js";
 import { SettleForm } from "../components/SettleForm.js";
 import { SettlementsSection } from "../components/SettlementsSection.js";
-import { cardClass, linkButtonClass } from "../components/styles.js";
+import { cardClass } from "../components/styles.js";
 import { useAuth } from "../lib/AuthContext.js";
 import { draftFromExpense, emptyDraft, type ExpenseDraft } from "../lib/expenseDraft.js";
 import { useCreateExpense, useCreateSettlement, useExpenses, usePerson } from "../lib/hooks.js";
@@ -58,9 +59,7 @@ function PersonDetail({ person, me }: { person: PersonBalance; me: UserProfile }
 
   return (
     <AppShell>
-      <Link to="/friends" className={linkButtonClass}>
-        ← Friends
-      </Link>
+      <BackLink to="/friends">Friends</BackLink>
       <h1 className="text-xl font-semibold text-ink mt-3 mb-4">{person.displayName}</h1>
 
       <section className={`mb-6 ${cardClass}`}>
@@ -70,18 +69,18 @@ function PersonDetail({ person, me }: { person: PersonBalance; me: UserProfile }
         ) : (
           <div className="divide-y divide-line border-t border-line">
             {person.contexts.map((context) => (
-              <div key={`${context.groupId}:${context.currency}`} className="text-sm flex items-center justify-between gap-3 px-4 py-3">
+              <div key={`${context.groupId}:${context.currency}`} className="text-sm flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3">
                 <span className="text-ink">
-                  {context.groupId ? <Link to={`/groups/${context.groupId}`} className="hover:text-ledger">{context.groupName}</Link> : "Direct"}
+                  {context.groupId ? <TextLink to={`/groups/${context.groupId}`}>{context.groupName}</TextLink> : "Direct"}
                 </span>
                 <span className="flex items-center gap-3">
                   <span className={context.netMinor > 0 ? "text-ledger" : "text-rust"}>
                     {context.netMinor > 0 ? "owes you " : "you owe "}
                     <span className="figure font-medium">{formatMoney(Math.abs(context.netMinor), context.currency)}</span>
                   </span>
-                  <button onClick={() => setForm({ kind: "settle", context })} className={linkButtonClass}>
+                  <Button icon="settle" onClick={() => setForm({ kind: "settle", context })}>
                     Settle up
-                  </button>
+                  </Button>
                 </span>
               </div>
             ))}
@@ -102,20 +101,20 @@ function PersonDetail({ person, me }: { person: PersonBalance; me: UserProfile }
       </section>
 
       <section className={`mb-6 ${cardClass}`}>
-        <div className="flex items-center justify-between px-4 py-3.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
           <h2 className="font-medium text-ink">{showDeleted ? "Deleted direct expenses" : "Direct expenses"}</h2>
-          <div className="flex gap-4">
-            <button
+          <div className="flex flex-wrap gap-2">
+            <Button
+              icon="plus"
               onClick={() =>
                 openExpense({ ...emptyDraft(me.id, [person.userId]), description: "IOU" }, me.defaultCurrency, "Record IOU")
               }
-              className={linkButtonClass}
             >
               Record an IOU
-            </button>
-            <button onClick={() => openExpense(emptyDraft(me.id, ids), me.defaultCurrency, "Add expense")} className={linkButtonClass}>
+            </Button>
+            <Button variant="primary" icon="plus" onClick={() => openExpense(emptyDraft(me.id, ids), me.defaultCurrency, "Add expense")}>
               Add expense
-            </button>
+            </Button>
           </div>
         </div>
         {form?.kind === "expense" && (
@@ -125,7 +124,7 @@ function PersonDetail({ person, me }: { person: PersonBalance; me: UserProfile }
               <select
                 value={form.currency}
                 onChange={(e) => setForm({ ...form, currency: e.target.value })}
-                className="rounded-md border border-line px-2 py-1 text-sm"
+                className="rounded-md border border-edge bg-white px-2 py-1 text-sm"
               >
                 {CURRENCY_CODES.map((code) => (
                   <option key={code} value={code}>
@@ -161,10 +160,10 @@ function PersonDetail({ person, me }: { person: PersonBalance; me: UserProfile }
           />
         )}
         <LoadMore query={expensesQuery} />
-        <div className="px-4 py-3 border-t border-line">
-          <button onClick={() => setShowDeleted((v) => !v)} className="text-xs text-ink-muted hover:text-ledger transition-colors">
+        <div className="border-t border-line">
+          <DisclosureButton open={showDeleted} onClick={() => setShowDeleted((v) => !v)}>
             {showDeleted ? "Back to expenses" : "Show deleted"}
-          </button>
+          </DisclosureButton>
         </div>
       </section>
 

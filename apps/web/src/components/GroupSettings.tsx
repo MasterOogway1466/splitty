@@ -4,7 +4,8 @@ import { ApiError } from "../lib/api.js";
 import { useAuth } from "../lib/AuthContext.js";
 import { useUpdateGroup } from "../lib/hooks.js";
 import { personLabel } from "../lib/members.js";
-import { inputClass, linkButtonClass, primaryButtonClass } from "./styles.js";
+import { Button } from "./Button.js";
+import { inputClass } from "./styles.js";
 
 const TYPE_LABELS: Record<(typeof groupTypeValues)[number], string> = { trip: "Trip", house: "House", couple: "Couple", other: "Other" };
 const METHOD_LABELS: Record<DefaultSplit["method"], string> = { equal: "Equally", percentage: "By percentage", shares: "By shares" };
@@ -121,7 +122,7 @@ export function GroupSettings({ group, onDone }: { group: GroupDetail; onDone: (
                   value={values[m.userId] ?? ""}
                   onChange={(e) => setValues({ ...values, [m.userId]: e.target.value })}
                   placeholder={method === "percentage" ? "%" : "shares"}
-                  className="w-24 rounded-md border border-line px-2 py-1 text-xs text-ink"
+                  className="w-24 rounded-md border border-edge bg-white px-2 py-1 text-xs text-ink"
                 />
               )}
             </label>
@@ -129,13 +130,13 @@ export function GroupSettings({ group, onDone }: { group: GroupDetail; onDone: (
         </div>
       )}
       {error && <p className="text-rust">{error}</p>}
-      <div className="flex items-center gap-4">
-        <button type="submit" disabled={update.isPending} className={primaryButtonClass}>
+      <div className="flex items-center gap-2">
+        <Button type="submit" variant="primary" size="md" disabled={update.isPending}>
           {update.isPending ? "Saving…" : "Save settings"}
-        </button>
-        <button type="button" onClick={onDone} className={linkButtonClass}>
+        </Button>
+        <Button size="md" onClick={onDone}>
           Cancel
-        </button>
+        </Button>
       </div>
     </form>
   );

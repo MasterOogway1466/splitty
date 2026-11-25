@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { textLinkClass } from "../components/styles.js";
 import { AuthLayout, ErrorBanner, SubmitButton, SuccessBanner, TextField } from "../components/AuthLayout.js";
 import { apiPost, ApiError } from "../lib/api.js";
 
@@ -34,7 +35,7 @@ export function ResetPasswordPage() {
       {done ? (
         <>
           <SuccessBanner message="Password updated. You've been logged out everywhere — log in with your new password." />
-          <Link to="/login" className="text-sm text-ledger font-medium hover:underline">
+          <Link to="/login" className={`text-sm ${textLinkClass}`}>
             Continue to log in
           </Link>
         </>

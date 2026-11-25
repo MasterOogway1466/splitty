@@ -3,11 +3,12 @@ import { todayCalendarDate, type Expense, type GroupDetail } from "@splitty/shar
 import { useAuth } from "../lib/AuthContext.js";
 import { draftFromExpense, emptyDraft, type ExpenseDraft } from "../lib/expenseDraft.js";
 import { useCreateExpense, useCreateSettlement, useExpenses, useGroupDebts } from "../lib/hooks.js";
+import { Button, DisclosureButton } from "./Button.js";
 import { ExpenseForm } from "./ExpenseForm.js";
 import { ExpenseRows } from "./ExpenseRows.js";
 import { LoadMore } from "./LoadMore.js";
 import { SettleForm } from "./SettleForm.js";
-import { cardClass, linkButtonClass } from "./styles.js";
+import { cardClass } from "./styles.js";
 
 export function ExpensesSection({ group }: { group: GroupDetail }) {
   const { user } = useAuth();
@@ -28,16 +29,21 @@ export function ExpensesSection({ group }: { group: GroupDetail }) {
 
   return (
     <section className={`mb-6 ${cardClass}`}>
-      <div className="flex items-center justify-between px-4 py-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
         <h2 className="font-medium text-ink">{showDeleted ? "Deleted expenses" : "Expenses"}</h2>
         {!group.archivedAt && (
-          <div className="flex gap-4">
-            <button onClick={() => setShowSettle((v) => !v)} className={linkButtonClass}>
+          <div className="flex flex-wrap gap-2">
+            <Button icon="settle" aria-expanded={showSettle} onClick={() => setShowSettle((v) => !v)}>
               Settle up
-            </button>
-            <button onClick={() => (form ? setForm(null) : openForm(emptyDraft(user?.id ?? "", memberIds, group.defaultSplit)))} className={linkButtonClass}>
+            </Button>
+            <Button
+              variant="primary"
+              icon="plus"
+              aria-expanded={form !== null}
+              onClick={() => (form ? setForm(null) : openForm(emptyDraft(user?.id ?? "", memberIds, group.defaultSplit)))}
+            >
               Add expense
-            </button>
+            </Button>
           </div>
         )}
       </div>
@@ -80,10 +86,10 @@ export function ExpensesSection({ group }: { group: GroupDetail }) {
       )}
       {expenses.length > 0 && <ExpenseRows expenses={expenses} onDuplicate={group.archivedAt ? null : duplicate} />}
       <LoadMore query={expensesQuery} />
-      <div className="px-4 py-3 border-t border-line">
-        <button onClick={() => setShowDeleted((v) => !v)} className="text-xs text-ink-muted hover:text-ledger transition-colors">
+      <div className="border-t border-line">
+        <DisclosureButton open={showDeleted} onClick={() => setShowDeleted((v) => !v)}>
           {showDeleted ? "Back to expenses" : "Show deleted"}
-        </button>
+        </DisclosureButton>
       </div>
     </section>
   );

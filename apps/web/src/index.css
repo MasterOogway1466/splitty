@@ -11,6 +11,10 @@
   --color-rust: #b23a2e;
   --color-gold: #c99a3b;
   --color-line: #dcd8cc;
+  /* Around things you can press or type in: 3:1 against white, so the
+     shape itself is visible. `line` only divides content. */
+  --color-edge: #8a948e;
+  --color-wash: #eef3ef;
 
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
@@ -19,6 +23,17 @@
 body {
   background-color: var(--color-paper);
   color: var(--color-ink);
+}
+
+/* Tailwind resets this to the arrow; a hand says "press me". */
+@layer base {
+  button:not(:disabled),
+  select:not(:disabled),
+  summary,
+  label:has(input[type="checkbox"]),
+  input[type="checkbox"] {
+    cursor: pointer;
+  }
 }
 
 /* Tabular figures wherever a dollar amount appears, so a column of

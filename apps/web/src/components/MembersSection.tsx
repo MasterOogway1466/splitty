@@ -4,7 +4,8 @@ import { ApiError } from "../lib/api.js";
 import { useAuth } from "../lib/AuthContext.js";
 import { useAddGroupMember, useRemoveGroupMember, useSetMemberColor } from "../lib/hooks.js";
 import { COLOR_SWATCH_CLASS, personLabel } from "../lib/members.js";
-import { inputClass, linkButtonClass, primaryButtonClass } from "./styles.js";
+import { Button, ConfirmButton } from "./Button.js";
+import { inputClass } from "./styles.js";
 
 export function MembersSection({ group }: { group: GroupDetail }) {
   const { user } = useAuth();
@@ -42,11 +43,11 @@ export function MembersSection({ group }: { group: GroupDetail }) {
     <section className="mb-6 bg-white border border-line rounded-lg">
       <div className="flex items-center justify-between px-4 py-3.5">
         <h2 className="font-medium text-ink">Members</h2>
-          {!group.archivedAt && (
-          <button onClick={() => setShowAddMember((v) => !v)} className={linkButtonClass}>
+        {!group.archivedAt && (
+          <Button icon={showAddMember ? "close" : "plus"} aria-expanded={showAddMember} onClick={() => setShowAddMember((v) => !v)}>
             {showAddMember ? "Cancel" : "Add member"}
-          </button>
-          )}
+          </Button>
+        )}
       </div>
       {showAddMember && (
         <form onSubmit={handleAddMember} className="mx-4 mb-4 flex gap-2">
@@ -58,15 +59,15 @@ export function MembersSection({ group }: { group: GroupDetail }) {
             required
             className={`flex-1 ${inputClass}`}
           />
-          <button type="submit" disabled={addMember.isPending} className={primaryButtonClass}>
+          <Button type="submit" variant="primary" size="md" disabled={addMember.isPending}>
             {addMember.isPending ? "Adding…" : "Add"}
-          </button>
+          </Button>
         </form>
       )}
       {memberError && <p className="text-sm text-rust px-4 mb-3">{memberError}</p>}
       <div className="divide-y divide-line border-t border-line">
         {group.members.map((m) => (
-          <div key={m.userId} className="flex items-center justify-between text-sm px-4 py-3">
+          <div key={m.userId} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 text-sm px-4 py-3">
             <span className="flex items-center gap-2 text-ink">
               {m.color && <span className={`inline-block h-2.5 w-2.5 rounded-full ${COLOR_SWATCH_CLASS[m.color]}`} />}
               {personLabel(m, user?.id)}
@@ -75,9 +76,10 @@ export function MembersSection({ group }: { group: GroupDetail }) {
             <div className="flex items-center gap-3">
               {m.userId === user?.id && (
                 <select
+                  aria-label="Your color"
                   value={m.color ?? ""}
                   onChange={(e) => setMemberColor.mutate((e.target.value || null) as MemberColor | null)}
-                  className="rounded-md border border-line px-1.5 py-1 text-xs text-ink-muted focus:outline-none focus:ring-2 focus:ring-ledger/40"
+                  className="rounded-md border border-edge bg-white px-1.5 py-1 text-xs text-ink focus:outline-none focus:ring-2 focus:ring-ledger/40"
                 >
                   <option value="">No color</option>
                   {memberColorValues.map((c) => (
@@ -91,9 +93,15 @@ export function MembersSection({ group }: { group: GroupDetail }) {
                 {m.netBalanceMinor === 0 ? "settled up" : formatMoney(m.netBalanceMinor, currency)}
               </span>
               {isOwner && !group.archivedAt && m.userId !== user?.id && (
-                <button onClick={() => handleRemove(m.userId)} className="text-xs text-ink-muted hover:text-rust transition-colors">
-                  remove
-                </button>
+                <ConfirmButton
+                  variant="secondary"
+                  size="xs"
+                  label="Remove"
+                  question={`Remove ${m.displayName}?`}
+                  confirmLabel="Remove"
+                  pending={removeMember.isPending}
+                  onConfirm={() => handleRemove(m.userId)}
+                />
               )}
             </div>
           </div>

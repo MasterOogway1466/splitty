@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import type { UserProfile } from "@splitty/shared";
+import { textLinkClass } from "../components/styles.js";
 import { AuthLayout, ErrorBanner, SubmitButton, TextField } from "../components/AuthLayout.js";
 import { ApiError, apiPost } from "../lib/api.js";
 import { useAuth } from "../lib/AuthContext.js";
@@ -71,7 +72,7 @@ export function AcceptInvitePage() {
     return (
       <AuthLayout title="Invite already used">
         <p className="text-sm text-ink-muted mb-4">This invite has already been claimed.</p>
-        <Link to="/login" className="text-sm text-ledger font-medium hover:underline">
+        <Link to="/login" className={`text-sm ${textLinkClass}`}>
           Continue to log in
         </Link>
       </AuthLayout>

@@ -2,6 +2,8 @@ import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { CURRENCY_CODES, formatMoney, type GroupSummary } from "@splitty/shared";
 import { AppShell } from "../components/AppShell.js";
+import { Button, DisclosureButton, RowChevron, RowLink, rowClass } from "../components/Button.js";
+import { cardClass, focusRing } from "../components/styles.js";
 import { useCreateGroup, useGlobalBalance, useGroupAction, useGroups } from "../lib/hooks.js";
 
 export function HomePage() {
@@ -54,12 +56,9 @@ export function HomePage() {
       <section>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold text-ink">Groups</h2>
-          <button
-            onClick={() => setShowForm((v) => !v)}
-            className="text-sm rounded-md bg-ledger text-paper px-3 py-1.5 hover:bg-ledger-dark transition-colors"
-          >
+          <Button variant={showForm ? "secondary" : "primary"} icon={showForm ? "close" : "plus"} aria-expanded={showForm} onClick={() => setShowForm((v) => !v)}>
             {showForm ? "Cancel" : "New group"}
-          </button>
+          </Button>
         </div>
 
         {showForm && (
@@ -70,7 +69,7 @@ export function HomePage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
-                className="w-full rounded-md border border-line px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-ledger/40 focus:border-ledger"
+                className="w-full rounded-md border border-edge bg-white px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-ledger/40 focus:border-ledger"
               />
             </label>
             <label className="block">
@@ -79,7 +78,7 @@ export function HomePage() {
                 value={currency}
                 onChange={(e) => setCurrency(e.target.value)}
                 required
-                className="w-32 rounded-md border border-line px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-ledger/40 focus:border-ledger"
+                className="w-32 rounded-md border border-edge bg-white px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-ledger/40 focus:border-ledger"
               >
                 {CURRENCY_CODES.map((code) => (
                   <option key={code} value={code}>
@@ -88,13 +87,9 @@ export function HomePage() {
                 ))}
               </select>
             </label>
-            <button
-              type="submit"
-              disabled={createGroup.isPending}
-              className="rounded-md bg-ledger text-paper text-sm font-medium px-4 py-2 hover:bg-ledger-dark transition-colors disabled:opacity-50"
-            >
+            <Button type="submit" variant="primary" size="md" disabled={createGroup.isPending}>
               {createGroup.isPending ? "Creating…" : "Create group"}
-            </button>
+            </Button>
           </form>
         )}
 
@@ -103,11 +98,11 @@ export function HomePage() {
           <p className="text-sm text-ink-muted">No groups yet — create one to start splitting expenses.</p>
         )}
         {groupsQuery.data && groupsQuery.data.length > 0 && (
-          <div className="bg-white border border-line rounded-lg divide-y divide-line">
+          <div className="overflow-hidden bg-white border border-line rounded-lg divide-y divide-line">
             {groupsQuery.data.map((group) => (
-              <Link key={group.id} to={`/groups/${group.id}`} className="flex items-center justify-between px-4 py-3.5 hover:bg-paper transition-colors">
-                <div>
-                  <p className="font-medium text-ink">{group.name}</p>
+              <Link key={group.id} to={`/groups/${group.id}`} className={`flex items-center gap-3 px-4 py-3.5 ${focusRing} focus-visible:ring-inset ${rowClass}`}>
+                <div className="min-w-0 flex-1">
+                  <p className="break-words font-medium text-ink group-hover:text-ledger">{group.name}</p>
                   <p className="text-xs text-ink-muted">
                     {group.memberCount} member{group.memberCount === 1 ? "" : "s"}
                   </p>
@@ -119,6 +114,7 @@ export function HomePage() {
                       ? `+${formatMoney(group.yourBalanceMinor, group.defaultCurrency)}`
                       : formatMoney(group.yourBalanceMinor, group.defaultCurrency)}
                 </p>
+                <RowChevron />
               </Link>
             ))}
           </div>
@@ -132,37 +128,41 @@ export function HomePage() {
 }
 
 function OtherGroups({ title, groups, restorable = false }: { title: string; groups: GroupSummary[]; restorable?: boolean }) {
+  const [open, setOpen] = useState(false);
   if (groups.length === 0) return null;
   return (
-    <details className="mt-8 text-sm">
-      <summary className="cursor-pointer text-ink-muted">
+    <section className={`mt-6 ${cardClass}`}>
+      <DisclosureButton open={open} onClick={() => setOpen((v) => !v)}>
         {title} ({groups.length})
-      </summary>
-      <ul className="mt-2 bg-white border border-line rounded-lg divide-y divide-line">
-        {groups.map((group) => (
-          <li key={group.id} className="flex items-center justify-between px-4 py-3">
-            {restorable ? (
-              <>
-                <span className="text-ink-muted">{group.name}</span>
+      </DisclosureButton>
+      {open && (
+        <ul className="divide-y divide-line border-t border-line text-sm">
+          {groups.map((group) =>
+            restorable ? (
+              <li key={group.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                <span className="min-w-0 break-words text-ink-muted">{group.name}</span>
                 <RestoreGroup groupId={group.id} />
-              </>
+              </li>
             ) : (
-              <Link to={`/groups/${group.id}`} className="text-ink hover:text-ledger">
-                {group.name}
-              </Link>
-            )}
-          </li>
-        ))}
-      </ul>
-    </details>
+              <li key={group.id} className={`flex items-center gap-3 px-4 py-3 ${rowClass}`}>
+                <RowLink to={`/groups/${group.id}`} className="min-w-0 flex-1 break-words">
+                  {group.name}
+                </RowLink>
+                <RowChevron />
+              </li>
+            ),
+          )}
+        </ul>
+      )}
+    </section>
   );
 }
 
 function RestoreGroup({ groupId }: { groupId: string }) {
   const action = useGroupAction(groupId);
   return (
-    <button onClick={() => action.mutate("restore")} disabled={action.isPending} className="text-ink-muted hover:text-ledger">
+    <Button icon="restore" size="xs" onClick={() => action.mutate("restore")} disabled={action.isPending}>
       Restore
-    </button>
+    </Button>
   );
 }

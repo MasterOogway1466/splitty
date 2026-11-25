@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ApiError, apiPost } from "../lib/api.js";
 import { useAuth } from "../lib/AuthContext.js";
 import { AppShell } from "./AppShell.js";
+import { Button } from "./Button.js";
 import { ErrorBanner, SuccessBanner } from "./AuthLayout.js";
 
 /** Shown in place of any page that needs a verified address. */
@@ -49,17 +50,13 @@ export function VerifyEmailNotice() {
       </p>
       {message && <SuccessBanner message={message} />}
       {error && <ErrorBanner message={error} />}
-      <div className="flex gap-4">
-        <button
-          onClick={recheck}
-          disabled={busy}
-          className="rounded-md bg-ledger text-paper text-sm font-medium px-4 py-2 hover:bg-ledger-dark transition-colors disabled:opacity-50"
-        >
+      <div className="flex flex-wrap gap-2">
+        <Button variant="primary" size="md" onClick={recheck} disabled={busy}>
           I've verified
-        </button>
-        <button onClick={resend} disabled={busy} className="text-sm text-ink-muted hover:text-ledger transition-colors">
+        </Button>
+        <Button size="md" icon="mail" onClick={resend} disabled={busy}>
           Resend email
-        </button>
+        </Button>
       </div>
     </AppShell>
   );

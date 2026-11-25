@@ -1,7 +1,8 @@
 import { formatMoney, moneyInputStep, parseMoneyInput } from "@splitty/shared";
 import type { ItemDraft } from "../lib/expenseDraft.js";
 import { personLabel, type Person } from "../lib/members.js";
-import { inputClass, linkButtonClass } from "./styles.js";
+import { Button } from "./Button.js";
+import { inputClass } from "./styles.js";
 
 export interface ItemizedDraft {
   items: ItemDraft[];
@@ -51,7 +52,7 @@ export function ItemizedEditor(props: {
               value={item.amount}
               onChange={(e) => patchItem(index, { amount: e.target.value })}
               placeholder={currency}
-              className="w-24 rounded-md border border-line px-2 py-1.5 text-sm text-ink"
+              className="w-24 rounded-md border border-edge px-2 py-1.5 text-sm text-ink"
             />
           </div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -67,24 +68,24 @@ export function ItemizedEditor(props: {
               </label>
             ))}
             {value.items.length > 1 && (
-              <button
-                type="button"
+              <Button
+                size="xs"
+                className="ml-auto"
+                aria-label={`Remove item ${index + 1}`}
                 onClick={() => onChange({ ...value, items: value.items.filter((_, i) => i !== index) })}
-                className="ml-auto text-xs text-ink-muted hover:text-rust"
               >
-                remove
-              </button>
+                Remove
+              </Button>
             )}
           </div>
         </div>
       ))}
-      <button
-        type="button"
+      <Button
+        icon="plus"
         onClick={() => onChange({ ...value, items: [...value.items, { description: "", amount: "", shares: {} }] })}
-        className={linkButtonClass}
       >
-        + add item
-      </button>
+        Add item
+      </Button>
       <div className="flex gap-2">
         {(["tax", "tip"] as const).map((field) => (
           <label key={field} className="flex-1 text-ink-muted">

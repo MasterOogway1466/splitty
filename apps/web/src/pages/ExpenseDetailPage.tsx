@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import {
   formatCalendarDate,
   formatDateTime,
@@ -10,9 +10,10 @@ import {
   type ShareInput,
 } from "@splitty/shared";
 import { AppShell } from "../components/AppShell.js";
+import { BackLink, Button, ConfirmButton } from "../components/Button.js";
 import { CommentsSection } from "../components/CommentsSection.js";
 import { ExpenseForm } from "../components/ExpenseForm.js";
-import { cardClass, linkButtonClass } from "../components/styles.js";
+import { cardClass, textLinkClass } from "../components/styles.js";
 import { ApiError } from "../lib/api.js";
 import { useAuth } from "../lib/AuthContext.js";
 import { draftFromExpense } from "../lib/expenseDraft.js";
@@ -97,7 +98,6 @@ function ExpenseDetail({ expense }: { expense: Expense }) {
   // The version being edited, held still while newer ones may arrive.
   const [editing, setEditing] = useState<Expense | null>(null);
   const [conflict, setConflict] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const members = groupQuery.data?.members ?? [];
@@ -119,7 +119,6 @@ function ExpenseDetail({ expense }: { expense: Expense }) {
 
   async function changeDeleted(deleted: boolean) {
     setError(null);
-    setConfirmDelete(false);
     try {
       await setDeleted.mutateAsync({ version: expense.version, deleted });
     } catch (err) {
@@ -129,9 +128,7 @@ function ExpenseDetail({ expense }: { expense: Expense }) {
 
   return (
     <AppShell>
-      <Link to={expense.groupId ? `/groups/${expense.groupId}` : "/friends"} className={linkButtonClass}>
-        ← {expense.groupId ? (groupQuery.data?.name ?? "Group") : "Friends"}
-      </Link>
+      <BackLink to={expense.groupId ? `/groups/${expense.groupId}` : "/friends"}>{expense.groupId ? (groupQuery.data?.name ?? "Group") : "Friends"}</BackLink>
       {editing ? (
         <div className="mt-3">
           {conflict && (
@@ -142,7 +139,7 @@ function ExpenseDetail({ expense }: { expense: Expense }) {
                   setConflict(false);
                   setEditing(expense);
                 }}
-                className="font-medium underline"
+                className={textLinkClass}
               >
                 Discard mine and load theirs
               </button>
@@ -234,31 +231,26 @@ function ExpenseDetail({ expense }: { expense: Expense }) {
             </div>
           )}
           {error && <p className="mt-3 text-sm text-rust">{error}</p>}
-          <div className="mt-4 flex items-center gap-4">
+          <div className="mt-4 flex flex-wrap items-center gap-2">
             {groupQuery.data?.archivedAt ? (
               <span className="text-sm text-ink-muted">The group is archived, so this can't be changed.</span>
             ) : expense.deletedAt ? (
-              <button onClick={() => changeDeleted(false)} disabled={setDeleted.isPending} className={linkButtonClass}>
+              <Button icon="restore" disabled={setDeleted.isPending} onClick={() => changeDeleted(false)}>
                 Restore
-              </button>
-            ) : confirmDelete ? (
-              <span className="text-sm text-ink-muted">
-                Delete this expense?{" "}
-                <button onClick={() => changeDeleted(true)} className="text-rust font-medium hover:underline">
-                  Confirm
-                </button>{" "}
-                <button onClick={() => setConfirmDelete(false)} className="hover:underline">
-                  Cancel
-                </button>
-              </span>
+              </Button>
             ) : (
               <>
-                <button onClick={() => setEditing(expense)} disabled={!ready} className={linkButtonClass}>
+                <Button icon="edit" disabled={!ready} onClick={() => setEditing(expense)}>
                   Edit
-                </button>
-                <button onClick={() => setConfirmDelete(true)} className={linkButtonClass}>
-                  Delete
-                </button>
+                </Button>
+                <ConfirmButton
+                  icon="trash"
+                  label="Delete"
+                  question="Delete this expense?"
+                  confirmLabel="Delete"
+                  pending={setDeleted.isPending}
+                  onConfirm={() => changeDeleted(true)}
+                />
               </>
             )}
           </div>
