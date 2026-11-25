@@ -11,14 +11,20 @@ export function SignupPage() {
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [touched, setTouched] = useState({ password: false, confirmPassword: false });
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Only once both fields have been visited, so nobody is corrected while
+  // still typing for the first time; after that it follows every keystroke.
+  const mismatch = password !== confirmPassword;
+  const showMismatch = mismatch && touched.password && touched.confirmPassword && password !== "" && confirmPassword !== "";
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    if (password !== confirmPassword) {
-      setError("The passwords don't match.");
+    if (mismatch) {
+      setTouched({ password: true, confirmPassword: true });
       return;
     }
     setSubmitting(true);
@@ -43,6 +49,7 @@ export function SignupPage() {
           type="password"
           value={password}
           onChange={setPassword}
+          onBlur={() => setTouched((prev) => ({ ...prev, password: true }))}
           autoComplete="new-password"
           required
           minLength={8}
@@ -52,6 +59,8 @@ export function SignupPage() {
           type="password"
           value={confirmPassword}
           onChange={setConfirmPassword}
+          onBlur={() => setTouched((prev) => ({ ...prev, confirmPassword: true }))}
+          error={showMismatch ? "The passwords don't match." : null}
           autoComplete="new-password"
           required
           minLength={8}
