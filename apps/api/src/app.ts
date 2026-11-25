@@ -29,7 +29,10 @@ import {
   NotExpenseParticipantError,
   NotGroupOwnerError,
   NotGroupMemberError,
+  PersonNotFoundError,
+  SettlementNotFoundError,
   VersionConflictError,
+  WrongStateError,
 } from "./groups/errors.js";
 import { GroupService } from "./groups/service.js";
 import { InviteService } from "./invites/service.js";
@@ -41,7 +44,7 @@ import { registerCategoryRoutes } from "./routes/categories.js";
 import { registerExpenseRoutes } from "./routes/expenses.js";
 import { registerGroupRoutes } from "./routes/groups.js";
 import { registerInviteRoutes } from "./routes/invites.js";
-import { serializeExpense } from "./routes/serializers.js";
+import { serializeExpense, serializeSettlement } from "./routes/serializers.js";
 import { registerSettlementRoutes } from "./routes/settlements.js";
 
 export interface BuildAppOptions {
@@ -101,7 +104,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     // GroupNotFoundError and NotGroupMemberError deliberately share a
     // status code: a non-member gets the same response whether the group
     // exists or not, so group existence is never leaked to non-members.
-    if (error instanceof GroupNotFoundError || error instanceof NotGroupMemberError || error instanceof NotExpenseParticipantError || error instanceof ExpenseNotFoundError) {
+    if (error instanceof GroupNotFoundError || error instanceof NotGroupMemberError || error instanceof NotExpenseParticipantError || error instanceof ExpenseNotFoundError || error instanceof SettlementNotFoundError || error instanceof PersonNotFoundError) {
       return reply.status(404).send({ error: error.code, message: error.message });
     }
     if (error instanceof AlreadyMemberError || error instanceof IdConflictError || error instanceof AffectsFormerMemberError) {
@@ -117,11 +120,11 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
       return reply.status(403).send({ error: error.code, message: error.message });
     }
     if (error instanceof VersionConflictError) {
-      return serializeExpense(opts.db, error.current).then((current) =>
-        reply.status(409).send({ error: error.code, message: error.message, current }),
-      );
+      const { current } = error;
+      const serialized = "expense" in current ? serializeExpense(opts.db, current.expense) : serializeSettlement(opts.db, current.settlement);
+      return serialized.then((row) => reply.status(409).send({ error: error.code, message: error.message, current: row }));
     }
-    if (error instanceof DomainError && error.code === "wrong_state") {
+    if (error instanceof WrongStateError) {
       return reply.status(409).send({ error: error.code, message: error.message });
     }
     if (error instanceof DomainError) {

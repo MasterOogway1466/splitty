@@ -117,11 +117,9 @@ function ExpenseDetail({ expense }: { expense: Expense }) {
 
   return (
     <AppShell>
-      {expense.groupId && (
-        <Link to={`/groups/${expense.groupId}`} className={linkButtonClass}>
-          ← {groupQuery.data?.name ?? "Group"}
-        </Link>
-      )}
+      <Link to={expense.groupId ? `/groups/${expense.groupId}` : "/friends"} className={linkButtonClass}>
+        ← {expense.groupId ? (groupQuery.data?.name ?? "Group") : "Friends"}
+      </Link>
       {editing ? (
         <div className="mt-3">
           {conflict && (

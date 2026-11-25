@@ -4,6 +4,8 @@ import { AppShell } from "../components/AppShell.js";
 import { ExpensesSection } from "../components/ExpensesSection.js";
 import { GroupActions } from "../components/GroupActions.js";
 import { MembersSection } from "../components/MembersSection.js";
+import { LoadMore } from "../components/LoadMore.js";
+import { SettlementsSection } from "../components/SettlementsSection.js";
 import { cardClass } from "../components/styles.js";
 import { useActivity, useGroup } from "../lib/hooks.js";
 
@@ -37,10 +39,12 @@ export function GroupDetailPage() {
       <GroupActions group={group} />
       <MembersSection group={group} />
       <ExpensesSection key={group.id} group={group} />
+      <SettlementsSection key={`payments-${group.id}`} scope={{ groupId: group.id }} />
       {activityQuery.data && (
         <section className={cardClass}>
           <h2 className="font-medium text-ink px-4 py-3.5 border-b border-line">Activity</h2>
-          <ActivityList items={activityQuery.data} showGroup={false} />
+          <ActivityList items={activityQuery.data.pages.flatMap((p) => p.items)} showGroup={false} />
+          <LoadMore query={activityQuery} />
         </section>
       )}
     </AppShell>

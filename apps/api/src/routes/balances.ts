@@ -1,9 +1,10 @@
 import { eq, inArray, or } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
-import type { PairwiseBalance } from "@splitty/shared";
+import type { BalanceContext, PairwiseBalance, PersonBalance } from "@splitty/shared";
 import { friendLinks, users } from "../db/schema.js";
-import { computeAllPairwiseBalances, computeGlobalBalances, computePairwiseBalances } from "../ledger/balances.js";
-import { activeCoMemberIds } from "../ledger/relationships.js";
+import { computeAllPairwiseBalances, computeGlobalBalances, computePairwiseBalances, pairwiseFlows } from "../ledger/balances.js";
+import { PersonNotFoundError } from "../groups/errors.js";
+import { activeCoMemberIds, isConnected, sharedGroups } from "../ledger/relationships.js";
 import { uuidParam } from "./params.js";
 import { authenticateVerified } from "../plugins/authenticate.js";
 
@@ -53,6 +54,33 @@ export async function registerBalanceRoutes(app: FastifyInstance): Promise<void>
       });
     }
     return result;
+  });
+
+  /** One person, broken down by where each part can be settled. What is
+   * left in a group you no longer both belong to counts as direct. */
+  app.get("/people/:personId", async (request): Promise<PersonBalance> => {
+    const userId = request.currentUser!.id;
+    const personId = uuidParam(request, "personId");
+    const flows = (await pairwiseFlows(db, userId)).filter((f) => f.otherUserId === personId);
+    const [person] = await db.select().from(users).where(eq(users.id, personId));
+    const known = flows.length > 0 || (personId !== userId && (await isConnected(db, userId, personId)));
+    if (!person || !known) throw new PersonNotFoundError();
+
+    const shared = new Map((await sharedGroups(db, userId, personId)).map((g) => [g.id, g.name]));
+    const contexts = new Map<string, BalanceContext>();
+    for (const { groupId, currency, deltaMinor } of flows) {
+      const settleIn = groupId !== null && shared.has(groupId) ? groupId : null;
+      const key = `${settleIn}:${currency}`;
+      const context = contexts.get(key) ?? { groupId: settleIn, groupName: settleIn && shared.get(settleIn)!, currency, netMinor: 0 };
+      context.netMinor += deltaMinor;
+      contexts.set(key, context);
+    }
+    return {
+      userId: person.id,
+      displayName: person.displayName,
+      avatarUrl: person.avatarUrl,
+      contexts: [...contexts.values()].filter((c) => c.netMinor !== 0),
+    };
   });
 
   app.get("/:otherUserId", async (request) => {

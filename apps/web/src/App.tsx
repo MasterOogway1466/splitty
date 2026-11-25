@@ -10,6 +10,8 @@ import { FriendsPage } from "./pages/FriendsPage.js";
 import { GroupDetailPage } from "./pages/GroupDetailPage.js";
 import { HomePage } from "./pages/HomePage.js";
 import { LoginPage } from "./pages/LoginPage.js";
+import { PersonPage } from "./pages/PersonPage.js";
+import { SettlementDetailPage } from "./pages/SettlementDetailPage.js";
 import { ProfilePage } from "./pages/ProfilePage.js";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage.js";
 import { SignupPage } from "./pages/SignupPage.js";
@@ -55,6 +57,22 @@ export function App() {
           element={
             <ProtectedRoute>
               <ExpenseDetailPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/people/:personId"
+          element={
+            <ProtectedRoute>
+              <PersonPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/settlements/:settlementId"
+          element={
+            <ProtectedRoute>
+              <SettlementDetailPage />
             </ProtectedRoute>
           }
         />

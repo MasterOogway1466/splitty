@@ -1,20 +1,30 @@
 import { useRef } from "react";
 import { uuidv7 } from "uuidv7";
-import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import type {
+  ActivityItem,
+  Category,
   CreateExpenseRequest,
   CreateGroupRequest,
   CreateSettlementRequest,
   CurrencyBalance,
   Expense,
+  ExpenseHistoryEntry,
+  GroupDebt,
   GroupDetail,
   GroupSummary,
   InviteInfo,
   MemberColor,
+  Page,
   PairwiseBalance,
+  PersonBalance,
   Settlement,
+  SettlementHistoryEntry,
+  UpdateExpenseRequest,
   UpdateProfileRequest,
-  UserProfile, ActivityItem, Category, ExpenseHistoryEntry, UpdateExpenseRequest } from "@splitty/shared";
+  UpdateSettlementRequest,
+  UserProfile,
+} from "@splitty/shared";
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "./api.js";
 
 /** Adds a client-generated id to each create request. Retrying identical
@@ -43,10 +53,56 @@ export function useGroup(groupId: string | null): UseQueryResult<GroupDetail> {
   });
 }
 
-export function useGroupExpenses(groupId: string, deleted = false): UseQueryResult<Expense[]> {
+/** A group's entries, or the direct ones shared with a person. */
+export type ListScope = { groupId: string } | { personId: string };
+
+function usePagedList<T>(queryKey: unknown[], path: string, params: Record<string, string> = {}) {
+  return useInfiniteQuery({
+    queryKey,
+    queryFn: ({ pageParam }) => {
+      const query = new URLSearchParams({ ...params, ...(pageParam ? { cursor: pageParam } : {}) }).toString();
+      return apiGet(query ? `${path}?${query}` : path) as Promise<Page<T>>;
+    },
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.nextCursor,
+  });
+}
+
+function useEntries<T>(kind: "expenses" | "settlements", scope: ListScope, deleted: boolean) {
+  const path = "groupId" in scope ? `/groups/${scope.groupId}/${kind}` : `/${kind}`;
+  return usePagedList<T>(["entries", kind, scope, { deleted }], path, {
+    ...("personId" in scope ? { with: scope.personId } : {}),
+    ...(deleted ? { deleted: "true" } : {}),
+  });
+}
+
+export function useExpenses(scope: ListScope, deleted = false) {
+  return useEntries<Expense>("expenses", scope, deleted);
+}
+
+export function useSettlements(scope: ListScope, deleted = false) {
+  return useEntries<Settlement>("settlements", scope, deleted);
+}
+
+export function useGroupDebts(groupId: string): UseQueryResult<GroupDebt[]> {
+  return useQuery({ queryKey: ["groups", groupId, "debts"], queryFn: () => apiGet(`/groups/${groupId}/debts`) as Promise<GroupDebt[]> });
+}
+
+export function usePerson(personId: string): UseQueryResult<PersonBalance> {
   return useQuery({
-    queryKey: ["groups", groupId, "expenses", { deleted }],
-    queryFn: () => apiGet(`/groups/${groupId}/expenses${deleted ? "?deleted=true" : ""}`) as Promise<Expense[]>,
+    queryKey: ["balances", "people", personId],
+    queryFn: () => apiGet(`/balances/people/${personId}`) as Promise<PersonBalance>,
+  });
+}
+
+export function useSettlement(settlementId: string): UseQueryResult<Settlement> {
+  return useQuery({ queryKey: ["settlements", settlementId], queryFn: () => apiGet(`/settlements/${settlementId}`) as Promise<Settlement> });
+}
+
+export function useSettlementHistory(settlementId: string): UseQueryResult<SettlementHistoryEntry[]> {
+  return useQuery({
+    queryKey: ["settlements", settlementId, "history"],
+    queryFn: () => apiGet(`/settlements/${settlementId}/history`) as Promise<SettlementHistoryEntry[]>,
   });
 }
 
@@ -83,18 +139,8 @@ export function useCategories(): UseQueryResult<Category[]> {
   return useQuery({ queryKey: ["categories"], queryFn: () => apiGet("/categories") as Promise<Category[]>, staleTime: Infinity });
 }
 
-export function useActivity(groupId?: string): UseQueryResult<ActivityItem[]> {
-  return useQuery({
-    queryKey: groupId ? ["groups", groupId, "activity"] : ["activity"],
-    queryFn: () => apiGet(groupId ? `/groups/${groupId}/activity` : "/activity") as Promise<ActivityItem[]>,
-  });
-}
-
-export function useGroupSettlements(groupId: string): UseQueryResult<Settlement[]> {
-  return useQuery({
-    queryKey: ["groups", groupId, "settlements"],
-    queryFn: () => apiGet(`/groups/${groupId}/settlements`) as Promise<Settlement[]>,
-  });
+export function useActivity(groupId?: string) {
+  return usePagedList<ActivityItem>(["activity", groupId ?? null], groupId ? `/groups/${groupId}/activity` : "/activity");
 }
 
 export function useGlobalBalance(): UseQueryResult<CurrencyBalance[]> {
@@ -169,48 +215,38 @@ export function useSetMemberColor(groupId: string) {
   });
 }
 
-export function useCreateGroupExpense(groupId: string) {
+// A ledger change can touch balances, lists and activity in several places,
+// so everything is refetched rather than guessing which.
+
+/** `groupId: null` for a direct expense. */
+export function useCreateExpense(groupId: string | null) {
   const queryClient = useQueryClient();
-  const create = useRetryableCreate((input: CreateExpenseRequest) => apiPost(`/groups/${groupId}/expenses`, input) as Promise<Expense>);
+  const path = groupId ? `/groups/${groupId}/expenses` : "/expenses";
+  const create = useRetryableCreate((input: CreateExpenseRequest) => apiPost(path, input) as Promise<Expense>);
+  return useMutation({ mutationFn: (input: CreateExpenseRequest) => create(input), onSuccess: () => queryClient.invalidateQueries() });
+}
+
+/** `groupId: null` for a direct settlement. */
+export function useCreateSettlement(groupId: string | null) {
+  const queryClient = useQueryClient();
+  const path = groupId ? `/groups/${groupId}/settlements` : "/settlements";
+  const create = useRetryableCreate((input: CreateSettlementRequest) => apiPost(path, input) as Promise<Settlement>);
+  return useMutation({ mutationFn: (input: CreateSettlementRequest) => create(input), onSuccess: () => queryClient.invalidateQueries() });
+}
+
+export function useUpdateSettlement(settlementId: string) {
+  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateExpenseRequest) => create(input),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["groups", groupId] });
-      void queryClient.invalidateQueries({ queryKey: ["groups", groupId, "expenses"] });
-    },
+    mutationFn: (input: UpdateSettlementRequest) => apiPut(`/settlements/${settlementId}`, input) as Promise<Settlement>,
+    onSettled: () => queryClient.invalidateQueries(),
   });
 }
 
-export function useCreateGroupSettlement(groupId: string) {
+export function useSetSettlementDeleted(settlementId: string) {
   const queryClient = useQueryClient();
-  const create = useRetryableCreate((input: CreateSettlementRequest) => apiPost(`/groups/${groupId}/settlements`, input) as Promise<Settlement>);
   return useMutation({
-    mutationFn: (input: CreateSettlementRequest) => create(input),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["groups", groupId] });
-      void queryClient.invalidateQueries({ queryKey: ["groups", groupId, "settlements"] });
-    },
-  });
-}
-
-export function useCreateDirectExpense() {
-  const queryClient = useQueryClient();
-  const create = useRetryableCreate((input: CreateExpenseRequest) => apiPost("/expenses", input) as Promise<Expense>);
-  return useMutation({
-    mutationFn: (input: CreateExpenseRequest) => create(input),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["balances"] });
-    },
-  });
-}
-
-export function useCreateDirectSettlement() {
-  const queryClient = useQueryClient();
-  const create = useRetryableCreate((input: CreateSettlementRequest) => apiPost("/settlements", input) as Promise<Settlement>);
-  return useMutation({
-    mutationFn: (input: CreateSettlementRequest) => create(input),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["balances"] });
-    },
+    mutationFn: ({ version, deleted }: { version: number; deleted: boolean }) =>
+      apiPost(`/settlements/${settlementId}/${deleted ? "delete" : "restore"}`, { version }) as Promise<Settlement>,
+    onSettled: () => queryClient.invalidateQueries(),
   });
 }

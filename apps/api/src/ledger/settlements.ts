@@ -1,7 +1,19 @@
 import { uuidv7 } from "uuidv7";
+import type { SettlementSnapshot } from "@splitty/shared";
 import { writeActivity } from "../activity/write.js";
 import type { Executor } from "../db/client.js";
-import { settlements } from "../db/schema.js";
+import { settlementEditHistory, settlements } from "../db/schema.js";
+
+/** What settlement_edit_history.diff holds: complete versions of what can
+ * change (docs/PLAN-PUBLIC.md §8). */
+export interface SettlementDiff {
+  before?: SettlementSnapshot | null;
+  after?: SettlementSnapshot | null;
+}
+
+export function snapshotSettlement(row: typeof settlements.$inferSelect): SettlementSnapshot {
+  return { amountMinor: row.amountMinor, method: row.method, note: row.note, settledAt: row.settledAt };
+}
 
 export interface CreateSettlementInput {
   id?: string | undefined;
@@ -13,7 +25,7 @@ export interface CreateSettlementInput {
   currency: string;
   method: "cash" | "bank_transfer" | "upi" | "other";
   note: string | null;
-  settledAt: Date;
+  settledAt: string;
   createdBy: string;
 }
 
@@ -21,7 +33,7 @@ export async function createSettlement(db: Executor, input: CreateSettlementInpu
   const id = input.id ?? uuidv7();
 
   await db.transaction(async (tx) => {
-    await tx.insert(settlements).values({
+    const [row] = await tx.insert(settlements).values({
       id,
       groupId: input.groupId,
       fromUserId: input.fromUserId,
@@ -37,6 +49,13 @@ export async function createSettlement(db: Executor, input: CreateSettlementInpu
       createdBy: input.createdBy,
       requestHash: input.requestHash ?? null,
       version: 1,
+    }).returning();
+
+    await tx.insert(settlementEditHistory).values({
+      settlementId: id,
+      editedBy: input.createdBy,
+      changeType: "create",
+      diff: { before: null, after: snapshotSettlement(row!) } satisfies SettlementDiff,
     });
 
     await writeActivity(tx, {

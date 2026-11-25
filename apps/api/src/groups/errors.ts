@@ -1,4 +1,4 @@
-import type { expenses } from "../db/schema.js";
+import type { expenses, settlements } from "../db/schema.js";
 
 export class DomainError extends Error {
   readonly code: string;
@@ -67,12 +67,27 @@ export class ExpenseNotFoundError extends DomainError {
   }
 }
 
+export class SettlementNotFoundError extends DomainError {
+  constructor() {
+    super("Payment not found", "settlement_not_found");
+  }
+}
+
+/** e.g. editing something deleted. */
+export class WrongStateError extends DomainError {
+  constructor(message: string) {
+    super(message, "wrong_state");
+  }
+}
+
+export type ChangedRow = { expense: typeof expenses.$inferSelect } | { settlement: typeof settlements.$inferSelect };
+
 /** The caller edited a version that is no longer current; `current` is what
  * replaced it. */
 export class VersionConflictError extends DomainError {
-  readonly current: typeof expenses.$inferSelect;
-  constructor(current: typeof expenses.$inferSelect) {
-    super("Someone else changed this expense", "version_conflict");
+  readonly current: ChangedRow;
+  constructor(current: ChangedRow) {
+    super("Someone else changed this in the meantime", "version_conflict");
     this.current = current;
   }
 }
@@ -113,5 +128,11 @@ export class GroupNotSettledError extends DomainError {
 export class InvalidSplitError extends DomainError {
   constructor(message: string) {
     super(message, "invalid_split");
+  }
+}
+
+export class PersonNotFoundError extends DomainError {
+  constructor() {
+    super("Person not found", "person_not_found");
   }
 }

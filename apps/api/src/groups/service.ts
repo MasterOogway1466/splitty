@@ -1,4 +1,4 @@
-import { and, asc, eq, isNotNull, isNull, ne } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNotNull, isNull, ne } from "drizzle-orm";
 import type { GroupSummary, GroupDetail, GroupMember, MemberColor } from "@splitty/shared";
 import type { Database, Executor } from "../db/client.js";
 import { lockGroup } from "../db/locks.js";
@@ -6,7 +6,7 @@ import { groupMembers, groups, users } from "../db/schema.js";
 import type { Env } from "../env.js";
 import { createInviteLink, reserveInviteSend } from "../invites/send.js";
 import type { Mailer } from "../mail/mailer.js";
-import { computeGroupBalances } from "../ledger/balances.js";
+import { computeBalancesByGroup, computeGroupBalances } from "../ledger/balances.js";
 import {
   AlreadyMemberError,
   CurrencyMismatchError,
@@ -71,6 +71,23 @@ export class GroupService {
     return !!row;
   }
 
+  async areMembers(groupId: string, userIds: string[], db: Executor = this.#db): Promise<boolean> {
+    const wanted = [...new Set(userIds)];
+    const rows = await db
+      .select({ userId: groupMembers.userId })
+      .from(groupMembers)
+      .innerJoin(groups, eq(groups.id, groupMembers.groupId))
+      .where(
+        and(
+          eq(groupMembers.groupId, groupId),
+          inArray(groupMembers.userId, wanted),
+          isNull(groupMembers.removedAt),
+          isNull(groups.deletedAt),
+        ),
+      );
+    return rows.length === wanted.length;
+  }
+
   async requireGroupCurrency(groupId: string, currency: string, db: Executor = this.#db): Promise<void> {
     const [group] = await db.select({ defaultCurrency: groups.defaultCurrency }).from(groups).where(eq(groups.id, groupId));
     if (!group) throw new GroupNotFoundError();
@@ -78,31 +95,31 @@ export class GroupService {
   }
 
   async listMyGroups(userId: string): Promise<GroupSummary[]> {
-    const memberships = await this.#db
-      .select({ groupId: groupMembers.groupId })
+    const myGroups = await this.#db
+      .select({ group: groups })
       .from(groupMembers)
-      .where(and(eq(groupMembers.userId, userId), isNull(groupMembers.removedAt)));
+      .innerJoin(groups, eq(groups.id, groupMembers.groupId))
+      .where(and(eq(groupMembers.userId, userId), isNull(groupMembers.removedAt), isNull(groups.deletedAt)));
+    if (myGroups.length === 0) return [];
 
-    const summaries: GroupSummary[] = [];
-    for (const { groupId } of memberships) {
-      const [group] = await this.#db.select().from(groups).where(eq(groups.id, groupId));
-      if (!group || group.deletedAt) continue;
-      const memberCountRows = await this.#db
-        .select({ userId: groupMembers.userId })
-        .from(groupMembers)
-        .where(and(eq(groupMembers.groupId, groupId), isNull(groupMembers.removedAt)));
-      const balances = await computeGroupBalances(this.#db, groupId);
-      summaries.push({
-        id: group.id,
-        name: group.name,
-        groupType: group.groupType,
-        defaultCurrency: group.defaultCurrency,
-        simplifyDebts: group.simplifyDebts,
-        memberCount: memberCountRows.length,
-        yourBalanceMinor: balances.get(userId) ?? 0,
-      });
-    }
-    return summaries;
+    const ids = myGroups.map(({ group }) => group.id);
+    const counts = await this.#db
+      .select({ groupId: groupMembers.groupId, members: count() })
+      .from(groupMembers)
+      .where(and(inArray(groupMembers.groupId, ids), isNull(groupMembers.removedAt)))
+      .groupBy(groupMembers.groupId);
+    const countOf = new Map(counts.map((c) => [c.groupId, c.members]));
+    const balances = await computeBalancesByGroup(this.#db, ids);
+
+    return myGroups.map(({ group }) => ({
+      id: group.id,
+      name: group.name,
+      groupType: group.groupType,
+      defaultCurrency: group.defaultCurrency,
+      simplifyDebts: group.simplifyDebts,
+      memberCount: countOf.get(group.id) ?? 0,
+      yourBalanceMinor: balances.get(group.id)?.get(userId) ?? 0,
+    }));
   }
 
   async getGroupDetail(groupId: string, requestingUserId: string): Promise<GroupDetail> {
@@ -112,25 +129,22 @@ export class GroupService {
     if (!group || group.deletedAt) throw new GroupNotFoundError();
 
     const memberRows = await this.#db
-      .select({ userId: groupMembers.userId, role: groupMembers.role, color: groupMembers.color })
+      .select({ user: users, role: groupMembers.role, color: groupMembers.color })
       .from(groupMembers)
-      .where(and(eq(groupMembers.groupId, groupId), isNull(groupMembers.removedAt)));
+      .innerJoin(users, eq(users.id, groupMembers.userId))
+      .where(and(eq(groupMembers.groupId, groupId), isNull(groupMembers.removedAt)))
+      .orderBy(asc(groupMembers.joinedAt));
 
     const balances = await computeGroupBalances(this.#db, groupId);
 
-    const members: GroupMember[] = [];
-    for (const row of memberRows) {
-      const [user] = await this.#db.select().from(users).where(eq(users.id, row.userId));
-      if (!user) continue;
-      members.push({
-        userId: user.id,
-        displayName: user.displayName,
-        avatarUrl: user.avatarUrl,
-        role: row.role,
-        color: row.color,
-        netBalanceMinor: balances.get(user.id) ?? 0,
-      });
-    }
+    const members: GroupMember[] = memberRows.map(({ user, role, color }) => ({
+      userId: user.id,
+      displayName: user.displayName,
+      avatarUrl: user.avatarUrl,
+      role,
+      color,
+      netBalanceMinor: balances.get(user.id) ?? 0,
+    }));
 
     return {
       id: group.id,

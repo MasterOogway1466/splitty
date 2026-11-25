@@ -1,11 +1,14 @@
-import { and, desc, eq, isNull, or } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
-import { createSettlementRequestSchema } from "@splitty/shared";
+import { createSettlementRequestSchema, versionRequestSchema, updateSettlementRequestSchema } from "@splitty/shared";
 import { checkAndRecordRateLimit } from "../auth/rateLimit.js";
-import { settlements } from "../db/schema.js";
+import { listSettlements } from "../ledger/lists.js";
 import { recordSettlement } from "../ledger/record.js";
+import { readSettlementHistory, requireSettlementAccess, setSettlementDeleted, updateSettlement } from "../ledger/settlementLifecycle.js";
+import { limitLedgerEdits } from "./editLimit.js";
+import { listQuery } from "./paging.js";
+import { uuidParam } from "./params.js";
 import { authenticateVerified } from "../plugins/authenticate.js";
-import { serializeSettlement } from "./serializers.js";
+import { serializeSettlement, serializeSettlementHistory } from "./serializers.js";
 
 const SETTLEMENT_CREATE_CAP = { windowSeconds: 24 * 60 * 60, maxEvents: 200 };
 
@@ -18,19 +21,7 @@ export async function registerSettlementRoutes(app: FastifyInstance): Promise<vo
   app.addHook("preHandler", (request, reply) => authenticateVerified(app, request, reply));
 
   app.get("/", async (request) => {
-    const userId = request.currentUser!.id;
-    const rows = await db
-      .select()
-      .from(settlements)
-      .where(
-        and(
-          isNull(settlements.groupId),
-          isNull(settlements.deletedAt),
-          or(eq(settlements.fromUserId, userId), eq(settlements.toUserId, userId)),
-        ),
-      )
-      .orderBy(desc(settlements.settledAt));
-    return rows.map(serializeSettlement);
+    return listSettlements(db, { directFor: request.currentUser!.id }, listQuery(request));
   });
 
   app.post("/", async (request, reply) => {
@@ -41,6 +32,36 @@ export async function registerSettlementRoutes(app: FastifyInstance): Promise<vo
     const body = createSettlementRequestSchema.parse(request.body);
     const { row, created } = await recordSettlement(db, groupService, { groupId: null, userId, body });
     reply.status(created ? 201 : 200);
-    return serializeSettlement(row);
+    return serializeSettlement(db, row);
   });
+
+  // The routes below serve group and direct settlements alike.
+
+  app.get("/:settlementId", async (request) => {
+    const row = await requireSettlementAccess(db, groupService, uuidParam(request, "settlementId"), request.currentUser!.id);
+    return serializeSettlement(db, row);
+  });
+
+  app.get("/:settlementId/history", async (request) => {
+    const row = await requireSettlementAccess(db, groupService, uuidParam(request, "settlementId"), request.currentUser!.id);
+    return serializeSettlementHistory(await readSettlementHistory(db, row.id));
+  });
+
+  app.put("/:settlementId", async (request) => {
+    const settlementId = uuidParam(request, "settlementId");
+    const userId = request.currentUser!.id;
+    await limitLedgerEdits(db, userId);
+    const body = updateSettlementRequestSchema.parse(request.body);
+    return serializeSettlement(db, await updateSettlement(db, groupService, { settlementId, userId, body }));
+  });
+
+  for (const [action, deleted] of [["delete", true], ["restore", false]] as const) {
+    app.post(`/:settlementId/${action}`, async (request) => {
+      const settlementId = uuidParam(request, "settlementId");
+      const userId = request.currentUser!.id;
+      await limitLedgerEdits(db, userId);
+      const { version } = versionRequestSchema.parse(request.body);
+      return serializeSettlement(db, await setSettlementDeleted(db, groupService, { settlementId, userId, version, deleted }));
+    });
+  }
 }

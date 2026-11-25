@@ -7,7 +7,9 @@ import { categories, expenses, settlements } from "../db/schema.js";
 import { DomainError, IdConflictError, NotExpenseParticipantError, NotGroupMemberError } from "../groups/errors.js";
 import type { GroupService } from "../groups/service.js";
 import { createExpense, participantUserIdsOf } from "./expenses.js";
-import { requireConnected, requireSettleable } from "./relationships.js";
+import { requireSettlementAccess } from "./settlementLifecycle.js";
+import { requireExpenseAccess } from "./lifecycle.js";
+import { requireConnected, requireSettleable, settlementPairKey } from "./relationships.js";
 import { createSettlement } from "./settlements.js";
 
 interface Recorded<Row> {
@@ -31,6 +33,9 @@ async function recordOnce<Row extends RecordedRow>(
   input: { id: string | undefined; userId: string; requestHash: string },
   find: (tx: Executor, id: string) => Promise<Row | undefined>,
   create: (tx: Executor) => Promise<{ id: string }>,
+  // A replay returns the entry as it is now, which the requester may have
+  // been taken off since.
+  requireAccess: (tx: Executor, id: string) => Promise<unknown>,
 ): Promise<Recorded<Row>> {
   return db.transaction(async (tx) => {
     if (input.id) {
@@ -38,6 +43,7 @@ async function recordOnce<Row extends RecordedRow>(
       const existing = await find(tx, input.id);
       if (existing) {
         if (existing.createdBy !== input.userId || existing.requestHash !== input.requestHash) throw new IdConflictError();
+        await requireAccess(tx, input.id);
         return { row: existing, created: false };
       }
     }
@@ -57,9 +63,7 @@ async function findSettlement(tx: Executor, id: string) {
 }
 
 async function requireMembers(tx: Executor, groupService: GroupService, groupId: string, userIds: string[]): Promise<void> {
-  for (const userId of new Set(userIds)) {
-    if (!(await groupService.isMember(groupId, userId, tx))) throw new NotGroupMemberError();
-  }
+  if (!(await groupService.areMembers(groupId, userIds, tx))) throw new NotGroupMemberError();
 }
 
 export async function requireCategory(tx: Executor, categoryId: string | null | undefined): Promise<void> {
@@ -107,7 +111,7 @@ export async function recordExpense(
       split: body,
       createdBy: userId,
     });
-  });
+  }, (tx, id) => requireExpenseAccess(tx, groupService, id, userId));
 }
 
 /** `groupId: null` records a direct settlement. */
@@ -128,7 +132,7 @@ export async function recordSettlement(
     } else {
       if (!parties.includes(userId)) throw new NotExpenseParticipantError();
       // The outstanding debt read below must not be paid down twice.
-      await lockKey(tx, `settle:${[...parties].sort().join(":")}`);
+      await lockKey(tx, settlementPairKey(body.fromUserId, body.toUserId));
       await requireSettleable(tx, userId, body);
     }
     return createSettlement(tx, {
@@ -141,8 +145,8 @@ export async function recordSettlement(
       currency: body.currency,
       method: body.method,
       note: body.note ?? null,
-      settledAt: body.settledAt ? new Date(body.settledAt) : new Date(),
+      settledAt: body.settledAt ?? new Date().toISOString().slice(0, 10),
       createdBy: userId,
     });
-  });
+  }, (tx, id) => requireSettlementAccess(tx, groupService, id, userId));
 }
