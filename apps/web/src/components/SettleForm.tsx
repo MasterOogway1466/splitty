@@ -11,7 +11,8 @@ import {
 import { ApiError } from "../lib/api.js";
 import { personLabel, type Person } from "../lib/members.js";
 import { METHOD_LABELS, type SettlementMethod } from "../lib/settlements.js";
-import { inputClass, linkButtonClass, primaryButtonClass } from "./styles.js";
+import { Button } from "./Button.js";
+import { inputClass } from "./styles.js";
 
 export function SettleForm(props: {
   people: Person[];
@@ -79,21 +80,24 @@ export function SettleForm(props: {
     <form onSubmit={handleSubmit} className="bg-paper border border-line rounded-md p-3 space-y-2">
       {suggestions.length > 0 && (
         <div className="text-sm">
-          <span className="text-ink font-medium">Outstanding</span>
+          <span className="text-ink font-medium">Outstanding, press to fill in</span>
           <ul className="mt-1 space-y-1">
             {suggestions.map((s) => (
               <li key={`${s.fromUserId}:${s.toUserId}`}>
-                <button
-                  type="button"
+                <Button
+                  className="w-full justify-between"
+                  title="Fill in this payment"
                   onClick={() => {
                     setFrom(s.fromUserId);
                     setTo(s.toUserId);
                     setAmount(formatMoneyInput(s.amountMinor, currency));
                   }}
-                  className={`text-left ${linkButtonClass}`}
                 >
-                  {nameOf(s.fromUserId)} → {nameOf(s.toUserId)} <span className="figure">{formatMoney(s.amountMinor, currency)}</span>
-                </button>
+                  <span>
+                    {nameOf(s.fromUserId)} → {nameOf(s.toUserId)}
+                  </span>
+                  <span className="figure">{formatMoney(s.amountMinor, currency)}</span>
+                </Button>
               </li>
             ))}
           </ul>
@@ -131,13 +135,13 @@ export function SettleForm(props: {
       </select>
       <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (optional)" maxLength={500} className={`${inputClass} py-1.5`} />
       {error && <p className="text-sm text-rust">{error}</p>}
-      <div className="flex items-center gap-4">
-        <button type="submit" disabled={submitting} className={primaryButtonClass}>
+      <div className="flex items-center gap-2">
+        <Button type="submit" variant="primary" size="md" disabled={submitting}>
           {submitting ? "Recording…" : "Record payment"}
-        </button>
-        <button type="button" onClick={props.onCancel} className={linkButtonClass}>
+        </Button>
+        <Button size="md" onClick={props.onCancel}>
           Cancel
-        </button>
+        </Button>
       </div>
     </form>
   );

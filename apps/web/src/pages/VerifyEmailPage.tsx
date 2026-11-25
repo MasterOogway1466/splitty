@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import type { UserProfile } from "@splitty/shared";
+import { textLinkClass } from "../components/styles.js";
 import { AuthLayout, ErrorBanner, SubmitButton, TextField } from "../components/AuthLayout.js";
 import { apiFetchOnce, ApiError } from "../lib/api.js";
 import { useAuth } from "../lib/AuthContext.js";
@@ -56,7 +57,7 @@ export function VerifyEmailPage() {
       </form>
       <p className="mt-4 text-sm text-ink-muted">
         Didn't sign up, or forgot it?{" "}
-        <Link to="/forgot-password" className="text-ledger font-medium hover:underline">
+        <Link to="/forgot-password" className={textLinkClass}>
           Reset the password
         </Link>
       </p>

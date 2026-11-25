@@ -5,7 +5,8 @@ import { draftToRequest, itemsTotalMinor, type ExpenseDraft, type SplitMethodCho
 import { useCategories } from "../lib/hooks.js";
 import { personLabel, type Person } from "../lib/members.js";
 import { ItemizedEditor } from "./ItemizedEditor.js";
-import { inputClass, linkButtonClass, primaryButtonClass } from "./styles.js";
+import { Button } from "./Button.js";
+import { focusRing, inputClass } from "./styles.js";
 
 const SPLIT_METHOD_LABELS: Record<SplitMethodChoice, string> = {
   equal: "Equal",
@@ -77,9 +78,9 @@ export function ExpenseForm(props: {
     </option>
   ));
   const addPayerButton = draft.payerRows.length < people.length && (
-    <button type="button" onClick={addPayer} className={`mt-1 block ${linkButtonClass}`}>
-      + add another payer
-    </button>
+    <Button icon="plus" size="xs" className="mt-1.5" onClick={addPayer}>
+      Add another payer
+    </Button>
   );
   const categories = categoriesQuery.data ?? [];
   const topLevel = categories.filter((c) => c.parentId === null);
@@ -165,13 +166,12 @@ export function ExpenseForm(props: {
                   placeholder="Amount"
                   className={`w-28 ${inputClass} py-1.5`}
                 />
-                <button
-                  type="button"
+                <Button
+                  size="xs"
                   onClick={() => patch({ payerRows: draft.payerRows.filter((_, j) => j !== i) })}
-                  className="text-xs text-ink-muted hover:text-rust transition-colors"
                 >
-                  remove
-                </button>
+                  Remove
+                </Button>
               </div>
             ))}
             <div className="flex items-center justify-between text-xs">
@@ -185,14 +185,15 @@ export function ExpenseForm(props: {
       </div>
       <div className="text-sm">
         <span className="text-ink font-medium">Split</span>
-        <div className="mt-1 flex flex-wrap gap-1.5">
+        <div role="group" aria-label="Split method" className="mt-1 flex flex-wrap gap-1.5">
           {(Object.keys(SPLIT_METHOD_LABELS) as SplitMethodChoice[]).map((method) => (
             <button
               key={method}
               type="button"
+              aria-pressed={draft.splitMethod === method}
               onClick={() => patch({ splitMethod: method })}
-              className={`rounded-md px-2.5 py-1 text-xs border transition-colors ${
-                draft.splitMethod === method ? "bg-ledger text-paper border-ledger" : "border-line text-ink-muted hover:border-ledger"
+              className={`rounded-md px-2.5 py-1.5 text-xs font-medium border transition-colors ${focusRing} ${
+                draft.splitMethod === method ? "bg-ledger text-paper border-ledger" : "border-edge bg-white text-ledger hover:border-ledger hover:bg-wash"
               }`}
             >
               {SPLIT_METHOD_LABELS[method]}
@@ -210,7 +211,7 @@ export function ExpenseForm(props: {
         )}
         <div className="mt-1.5 space-y-1.5">
           {!itemized && people.map((p) => (
-            <label key={p.userId} className="flex items-center gap-2 text-ink-muted">
+            <label key={p.userId} className="flex items-center gap-2 rounded-md py-0.5 text-ink hover:text-ledger">
               <input
                 type="checkbox"
                 checked={draft.participants.has(p.userId)}
@@ -227,7 +228,7 @@ export function ExpenseForm(props: {
                   placeholder={
                     draft.splitMethod === "percentage" ? "%" : draft.splitMethod === "shares" ? "shares" : draft.splitMethod === "adjustment" ? "+/−" : currency
                   }
-                  className="w-24 rounded-md border border-line px-2 py-1 text-xs text-ink focus:outline-none focus:ring-2 focus:ring-ledger/40"
+                  className="w-24 rounded-md border border-edge bg-white px-2 py-1 text-xs text-ink focus:outline-none focus:ring-2 focus:ring-ledger/40"
                 />
               )}
             </label>
@@ -257,13 +258,13 @@ export function ExpenseForm(props: {
         className={`${inputClass} py-1.5`}
       />
       {error && <p className="text-sm text-rust">{error}</p>}
-      <div className="flex items-center gap-4">
-        <button type="submit" disabled={submitting} className={primaryButtonClass}>
+      <div className="flex items-center gap-2">
+        <Button type="submit" variant="primary" size="md" disabled={submitting}>
           {submitting ? "Saving…" : props.submitLabel}
-        </button>
-        <button type="button" onClick={props.onCancel} className={linkButtonClass}>
+        </Button>
+        <Button size="md" onClick={props.onCancel}>
           Cancel
-        </button>
+        </Button>
       </div>
     </form>
   );

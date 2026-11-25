@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { textLinkClass } from "../components/styles.js";
 import { AuthLayout, ErrorBanner, SubmitButton, TextField } from "../components/AuthLayout.js";
 import { ApiError } from "../lib/api.js";
 import { useAuth } from "../lib/AuthContext.js";
@@ -60,7 +61,7 @@ export function SignupPage() {
       </form>
       <p className="mt-4 text-sm text-ink-muted text-center">
         Already have an account?{" "}
-        <Link to="/login" className="text-ledger font-medium hover:underline">
+        <Link to="/login" className={textLinkClass}>
           Log in
         </Link>
       </p>

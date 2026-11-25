@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { textLinkClass } from "../components/styles.js";
 import { AuthLayout, SubmitButton, SuccessBanner, TextField } from "../components/AuthLayout.js";
 import { apiPost } from "../lib/api.js";
 
@@ -31,7 +32,7 @@ export function ForgotPasswordPage() {
         </form>
       )}
       <p className="mt-4 text-sm text-center">
-        <Link to="/login" className="text-ledger font-medium hover:underline">
+        <Link to="/login" className={textLinkClass}>
           Back to login
         </Link>
       </p>

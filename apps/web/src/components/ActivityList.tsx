@@ -1,5 +1,5 @@
-import { Link } from "react-router-dom";
 import { formatDateTime, type ActivityItem } from "@splitty/shared";
+import { TextLink } from "./Button.js";
 import { useAuth } from "../lib/AuthContext.js";
 
 const VERBS: Record<ActivityItem["type"], string> = {
@@ -53,8 +53,8 @@ function Subject({ item }: { item: ActivityItem }) {
   const path = { expense: "expenses", settlement: "settlements", group: "groups" }[item.entityType];
   if (!path) return <span className="font-medium">{item.entityLabel}</span>;
   return (
-    <Link to={`/${path}/${item.entityId}`} className="font-medium hover:text-ledger transition-colors">
+    <TextLink to={`/${path}/${item.entityId}`}>
       {item.entityLabel}
-    </Link>
+    </TextLink>
   );
 }

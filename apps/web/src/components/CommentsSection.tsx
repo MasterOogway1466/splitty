@@ -3,7 +3,8 @@ import { formatDateTime } from "@splitty/shared";
 import { ApiError } from "../lib/api.js";
 import { useAuth } from "../lib/AuthContext.js";
 import { useAddComment, useComments, useDeleteComment } from "../lib/hooks.js";
-import { cardClass, inputClass, primaryButtonClass } from "./styles.js";
+import { Button, ConfirmButton } from "./Button.js";
+import { cardClass, inputClass } from "./styles.js";
 
 export function CommentsSection({ expenseId, readOnly }: { expenseId: string; readOnly: boolean }) {
   const { user } = useAuth();
@@ -38,17 +39,25 @@ export function CommentsSection({ expenseId, readOnly }: { expenseId: string; re
         <ul className="divide-y divide-line border-t border-line">
           {comments.map((c) => (
             <li key={c.id} className="px-4 py-3 text-sm text-ink">
-              <p className="text-xs text-ink-muted">
+              <div className="flow-root text-xs text-ink-muted">
                 {c.userId === user?.id ? "You" : c.displayName} · {formatDateTime(new Date(c.createdAt))}
                 {!readOnly && c.userId === user?.id && (
                   <>
-                    {" · "}
-                    <button onClick={() => attempt(() => deleteComment.mutateAsync(c.id))} className="hover:text-rust transition-colors">
-                      Delete
-                    </button>
+                    <span className="float-right">
+                      <ConfirmButton
+                        variant="secondary"
+                        size="xs"
+                        icon="trash"
+                        label="Delete"
+                        question="Delete this comment?"
+                        confirmLabel="Delete"
+                        pending={deleteComment.isPending}
+                        onConfirm={() => attempt(() => deleteComment.mutateAsync(c.id))}
+                      />
+                    </span>
                   </>
                 )}
-              </p>
+              </div>
               <p className="mt-0.5 whitespace-pre-wrap break-words">{c.body}</p>
             </li>
           ))}
@@ -66,9 +75,9 @@ export function CommentsSection({ expenseId, readOnly }: { expenseId: string; re
             required
             className={`flex-1 min-w-0 ${inputClass}`}
           />
-          <button type="submit" disabled={addComment.isPending} className={primaryButtonClass}>
+          <Button type="submit" variant="primary" size="md" disabled={addComment.isPending}>
             Post
-          </button>
+          </Button>
         </form>
       )}
     </section>

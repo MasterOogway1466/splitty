@@ -3,6 +3,7 @@ import { formatMoney, type GroupDetail } from "@splitty/shared";
 import { useAuth } from "../lib/AuthContext.js";
 import { useGroupDebts } from "../lib/hooks.js";
 import { personLabel } from "../lib/members.js";
+import { DisclosureButton } from "./Button.js";
 import { cardClass } from "./styles.js";
 
 export function DebtsSection({ group }: { group: GroupDetail }) {
@@ -33,10 +34,10 @@ export function DebtsSection({ group }: { group: GroupDetail }) {
         {shown.length === 0 && <li className="px-4 py-3 text-sm text-ink-muted">Nothing to pay: these debts cancel out.</li>}
       </ul>
       {simplified && (
-        <div className="px-4 py-3 border-t border-line">
-          <button onClick={() => setShowRecorded((v) => !v)} className="text-xs text-ink-muted hover:text-ledger transition-colors">
+        <div className="border-t border-line">
+          <DisclosureButton open={showRecorded} onClick={() => setShowRecorded((v) => !v)}>
             {showRecorded ? "Show simplified" : "Show the debts behind this"}
-          </button>
+          </DisclosureButton>
         </div>
       )}
     </section>

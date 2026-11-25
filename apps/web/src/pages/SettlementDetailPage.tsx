@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import {
   formatCalendarDate,
   formatDateTime,
@@ -12,7 +12,8 @@ import {
   type SettlementSnapshot,
 } from "@splitty/shared";
 import { AppShell } from "../components/AppShell.js";
-import { cardClass, inputClass, linkButtonClass, primaryButtonClass } from "../components/styles.js";
+import { BackLink, Button, ConfirmButton } from "../components/Button.js";
+import { cardClass, inputClass, textLinkClass } from "../components/styles.js";
 import { ApiError } from "../lib/api.js";
 import { useAuth } from "../lib/AuthContext.js";
 import { useGroup, useSetSettlementDeleted, useSettlement, useSettlementHistory, useUpdateSettlement } from "../lib/hooks.js";
@@ -62,13 +63,11 @@ function SettlementDetail({ settlement }: { settlement: Settlement }) {
   const historyQuery = useSettlementHistory(settlement.id);
   const setDeleted = useSetSettlementDeleted(settlement.id);
   const [editing, setEditing] = useState<Settlement | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const otherId = settlement.fromUserId === user?.id ? settlement.toUserId : settlement.fromUserId;
 
   async function changeDeleted(deleted: boolean) {
     setError(null);
-    setConfirmDelete(false);
     try {
       await setDeleted.mutateAsync({ version: settlement.version, deleted });
     } catch (err) {
@@ -78,9 +77,7 @@ function SettlementDetail({ settlement }: { settlement: Settlement }) {
 
   return (
     <AppShell>
-      <Link to={settlement.groupId ? `/groups/${settlement.groupId}` : `/people/${otherId}`} className={linkButtonClass}>
-        ← {settlement.groupId ? (groupQuery.data?.name ?? "Group") : "Back"}
-      </Link>
+      <BackLink to={settlement.groupId ? `/groups/${settlement.groupId}` : `/people/${otherId}`}>{settlement.groupId ? (groupQuery.data?.name ?? "Group") : "Back"}</BackLink>
       <section className={`mt-3 p-4 ${cardClass}`}>
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -102,31 +99,26 @@ function SettlementDetail({ settlement }: { settlement: Settlement }) {
         {editing ? (
           <EditForm key={editing.version} settlement={editing} onReload={() => setEditing(settlement)} onDone={() => setEditing(null)} />
         ) : (
-          <div className="mt-4 flex items-center gap-4">
+          <div className="mt-4 flex flex-wrap items-center gap-2">
             {groupQuery.data?.archivedAt ? (
               <span className="text-sm text-ink-muted">The group is archived, so this can't be changed.</span>
             ) : settlement.deletedAt ? (
-              <button onClick={() => changeDeleted(false)} disabled={setDeleted.isPending} className={linkButtonClass}>
+              <Button icon="restore" disabled={setDeleted.isPending} onClick={() => changeDeleted(false)}>
                 Restore
-              </button>
-            ) : confirmDelete ? (
-              <span className="text-sm text-ink-muted">
-                Delete this payment?{" "}
-                <button onClick={() => changeDeleted(true)} className="text-rust font-medium hover:underline">
-                  Confirm
-                </button>{" "}
-                <button onClick={() => setConfirmDelete(false)} className="hover:underline">
-                  Cancel
-                </button>
-              </span>
+              </Button>
             ) : (
               <>
-                <button onClick={() => setEditing(settlement)} className={linkButtonClass}>
+                <Button icon="edit" onClick={() => setEditing(settlement)}>
                   Edit
-                </button>
-                <button onClick={() => setConfirmDelete(true)} className={linkButtonClass}>
-                  Delete
-                </button>
+                </Button>
+                <ConfirmButton
+                  icon="trash"
+                  label="Delete"
+                  question="Delete this payment?"
+                  confirmLabel="Delete"
+                  pending={setDeleted.isPending}
+                  onConfirm={() => changeDeleted(true)}
+                />
               </>
             )}
           </div>
@@ -189,7 +181,7 @@ function EditForm({ settlement, onReload, onDone }: { settlement: Settlement; on
       {conflict && (
         <p className="text-sm text-rust">
           Someone else changed this payment while you were editing, so your changes weren't saved.{" "}
-          <button type="button" onClick={onReload} className="font-medium underline">
+          <button type="button" onClick={onReload} className={textLinkClass}>
             Discard mine and load theirs
           </button>
         </p>
@@ -216,13 +208,13 @@ function EditForm({ settlement, onReload, onDone }: { settlement: Settlement; on
       </select>
       <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (optional)" maxLength={500} className={`${inputClass} py-1.5`} />
       {error && <p className="text-sm text-rust">{error}</p>}
-      <div className="flex items-center gap-4">
-        <button type="submit" disabled={update.isPending} className={primaryButtonClass}>
+      <div className="flex items-center gap-2">
+        <Button type="submit" variant="primary" size="md" disabled={update.isPending}>
           {update.isPending ? "Saving…" : "Save changes"}
-        </button>
-        <button type="button" onClick={onDone} className={linkButtonClass}>
+        </Button>
+        <Button size="md" onClick={onDone}>
           Cancel
-        </button>
+        </Button>
       </div>
     </form>
   );

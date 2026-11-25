@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { CURRENCY_CODES, formatDate } from "@splitty/shared";
+import { textLinkClass } from "../components/styles.js";
 import { AppShell } from "../components/AppShell.js";
 import { ErrorBanner, SubmitButton, SuccessBanner, TextField } from "../components/AuthLayout.js";
 import { ApiError } from "../lib/api.js";
@@ -87,7 +88,7 @@ export function ProfilePage() {
               value={defaultCurrency}
               onChange={(e) => setDefaultCurrency(e.target.value)}
               required
-              className="w-32 rounded-md border border-line px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-ledger/40 focus:border-ledger"
+              className="w-32 rounded-md border border-edge bg-white px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-ledger/40 focus:border-ledger"
             >
               {CURRENCY_CODES.map((code) => (
                 <option key={code} value={code}>
@@ -102,7 +103,7 @@ export function ProfilePage() {
               value={timezone}
               onChange={(e) => setTimezone(e.target.value)}
               required
-              className="w-full rounded-md border border-line px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-ledger/40 focus:border-ledger"
+              className="w-full rounded-md border border-edge bg-white px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-ledger/40 focus:border-ledger"
             >
               {TIMEZONES.map((tz) => (
                 <option key={tz} value={tz}>
@@ -114,7 +115,7 @@ export function ProfilePage() {
           <SubmitButton disabled={updateProfile.isPending}>{updateProfile.isPending ? "Saving…" : "Save changes"}</SubmitButton>
         </form>
         <p className="mt-4 text-sm text-ink-muted">
-          <Link to="/forgot-password" state={{ email: user.email }} className="text-ledger hover:underline">
+          <Link to="/forgot-password" state={{ email: user.email }} className={textLinkClass}>
             Change password
           </Link>
         </p>
